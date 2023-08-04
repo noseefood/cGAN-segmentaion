@@ -1,190 +1,92 @@
-from __future__ import print_function
-import argparse
-import os
-from math import log10
-
 import torch
-import torch.nn as nn
-import torch.optim as optim
 from torch.autograd import Variable
-from torch.utils.data import DataLoader
-from models import G, D, weights_init
-from data import get_training_set, get_test_set
-import torch.backends.cudnn as cudnn
-
-import matplotlib.pyplot as plt
-
-import numpy as np
-
-# Training settings
-parser = argparse.ArgumentParser(description='breast tummor segmentation-PyTorch-implementation')
-parser.add_argument('--dataset', default="US", help='needleUS')
-parser.add_argument('--batchSize', type=int, default=8, help='training batch size')
-parser.add_argument('--testBatchSize', type=int, default=8, help='testing batch size')
-parser.add_argument('--nEpochs', type=int, default=200, help='number of epochs to train for')
-parser.add_argument('--input_nc', type=int, default=1, help='input image channels')
-parser.add_argument('--output_nc', type=int, default=1, help='output image channels')
-parser.add_argument('--ngf', type=int, default=32, help='generator filters in first conv layer')
-parser.add_argument('--ndf', type=int, default=32, help='discriminator filters in first conv layer')
-parser.add_argument('--lr', type=float, default=0.0002, help='Learning Rate. Default=0.002')
-parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
-parser.add_argument('--cuda', action='store_true', help='use cuda?')
-parser.add_argument('--threads', type=int, default=4, help='number of threads for data loader to use')
-parser.add_argument('--seed', type=int, default=671, help='random seed to use. Default=123')
-parser.add_argument('--lamb', type=int, default=150, help='weight on L1 term in objective')
-# parser.add_argument('--lamb1', type=int, default=1, help='weight on Dice loss term in objective')
-opt = parser.parse_args()
-
-print(opt)
-
-def dice_loss(pred, target, smooth = 1.):
-    pred = pred.contiguous()
-    target = target.contiguous()
-    intersection = (pred * target).sum(dim=2).sum(dim=2)
-    loss = (1 - ((2. * intersection + smooth) / (pred.sum(dim=2).sum(dim=2) + target.sum(dim=2).sum(dim=2) + smooth)))
-    return loss.mean()
-
-if opt.cuda and not torch.cuda.is_available():
-    raise Exception("No GPU found, please run without --cuda")
-
-cudnn.benchmark = True # 增加程序的运行效率
-
-torch.manual_seed(opt.seed)
-if opt.cuda:
-    torch.cuda.manual_seed(opt.seed)
-
-print('===> Loading datasets')
-root_path = "data/"
-train_set = get_training_set(root_path + opt.dataset)
-test_set = get_test_set(root_path + opt.dataset)
-training_data_loader = DataLoader(dataset=train_set, num_workers=opt.threads, batch_size=opt.batchSize, shuffle=True)
-testing_data_loader = DataLoader(dataset=test_set, num_workers=opt.threads, batch_size=opt.testBatchSize, shuffle=False)
-
-print('===> Building model')
-netG = G(opt.input_nc, opt.output_nc, opt.ngf)
-netG.apply(weights_init)
-netD = D(opt.input_nc, opt.output_nc, opt.ndf)
-netD.apply(weights_init)
-
-criterion = nn.BCELoss()
-criterion_l1 = nn.L1Loss()
-criterion_mse = nn.MSELoss()
-
-real_A = torch.FloatTensor(opt.batchSize, opt.input_nc, 256, 256)
-real_B = torch.FloatTensor(opt.batchSize, opt.output_nc, 256, 256)
-label = torch.FloatTensor(opt.batchSize)
-real_label = 1
-fake_label = 0
-
-if opt.cuda:
-    netD = netD.cuda()
-    netG = netG.cuda()
-    criterion = criterion.cuda()
-    criterion_l1 = criterion_l1.cuda()
-    criterion_mse = criterion_mse.cuda()
-    real_A = real_A.cuda()
-    real_B = real_B.cuda()
-    label = label.cuda()
+from torch.utils.tensorboard import SummaryWriter
+import torchvision
 
 
-real_A = Variable(real_A) # input image
-real_B = Variable(real_B) # ground truth mask
-label = Variable(label) # real/fake label
+def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv, loss_rec):
 
-# setup optimizer
-optimizerD = torch.optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-optimizerG = torch.optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+    writer = SummaryWriter()  
 
+    for epoch in range(args.epoch):
+        for i_batch, sample_batched in enumerate(dataloader):  # i_batch: steps
 
-def train(epoch):
-    for iteration, batch in enumerate(training_data_loader, 1):
-        ############################
-        # (1) Update D network: maximize log(D(x,y)) + log(1 - D(x,G(x)))
-        ###########################
-        # train with real
-        netD.volatile = True
-        netD.zero_grad()
-        real_a_cpu, real_b_cpu = batch[0], batch[1]  # a img, b mask
-        real_A.data.resize_(real_a_cpu.size()).copy_(real_a_cpu)
-        real_B.data.resize_(real_b_cpu.size()).copy_(real_b_cpu)
+            # update generator
 
-        output = netD(torch.cat((real_A, real_B), 1)) # real/fake output 
-        print (output.size())
-        # label.data.resize_(output.size()).fill_(real_label) # fake/real label 这里应该让label的size和output(30*30)的size一样，全部填充为1，这里有问题并没有生效，pytorch版本问题
-        label.resize_(output.size()).fill_(real_label)
-        print (output.shape)
-        print (label.shape)
+            img, mask = sample_batched['image'], sample_batched['mask']
 
-        err_d_real = criterion(output, label) # real/fake loss
-        # print (err_d_real)
-        err_d_real.backward()
-        d_x_y = output.data.mean()
+            valid = Variable(torch.cuda.FloatTensor(mask.size(0), 1).fill_(1.0), requires_grad=False)  # for discriminator
+            fake = Variable(torch.cuda.FloatTensor(img.size(0), 1).fill_(0.0), requires_grad=False) # for discriminator
 
-        # train with fake
-        fake_b = netG(real_A)  # fake mask
-        output = netD(torch.cat((real_A, fake_b.detach()), 1))
-        # label.data.resize_(output.size()).fill_(fake_label)
-        label.resize_(output.size()).fill_(fake_label)
-        err_d_fake = criterion(output, label)
-        # print (err_d_fake)
-        err_d_fake.backward()
-        d_x_gx = output.data.mean()
+            valid = valid.cuda()
+            fake = fake.cuda()
 
-        err_d = (err_d_real + err_d_fake) / 2.0
-        optimizerD.step()
+            mask = mask.cuda()
+            img = img.cuda()
 
-        ############################
-        # (2) Update G network: maximize log(D(x,G(x))) + L1(y,G(x))
-        ###########################
-        netG.zero_grad()
-        netD.volatile = True
-        output = netD(torch.cat((real_A, fake_b), 1))
-        # label.data.resize_(output.size()).fill_(real_label)
-        label.resize_(output.size()).fill_(real_label)
-        err_g = criterion(output, label) + opt.lamb * dice_loss(fake_b, real_B)
-        err_g.backward()
-        d_x_gx_2 = output.data.mean()
-        optimizerG.step()
+            optim_G.zero_grad()
 
-        # print("===> Epoch[{}]({}/{}): Loss_D: {:.4f} Loss_G: {:.4f} D(x): {:.4f} D(G(z)): {:.4f}/{:.4f}".format(
-        #     epoch, iteration, len(training_data_loader), err_d.data[0], err_g.data[0], d_x_y, d_x_gx, d_x_gx_2))
-        print("===> Epoch[{}]({}/{}): Loss_D: {:.4f} Loss_G: {:.4f} D(x): {:.4f} D(G(z)): {:.4f}/{:.4f}".format(
-            epoch, iteration, len(training_data_loader), err_d, err_g, d_x_y, d_x_gx, d_x_gx_2))
+            g_output = generator(img)  # predicted mask
+
+            loss_adv_ = loss_adv(discriminator(g_output), valid)
+
+            mask = mask.float()
+
+            loss_rec_ = loss_rec(g_output, mask)
+            g_loss = (loss_adv_ + loss_rec_) / 2
+
+            g_loss.backward()
+            optim_G.step()
 
 
 
-def test():
-    avg_psnr = 0
-    for batch in testing_data_loader:
-        input, target = Variable(batch[0]), Variable(batch[1])
-        if opt.cuda:
-            input = input.cuda()
-            target = target.cuda()
+            # update discriminator
 
-        prediction = netG(input)
-        mse = criterion_mse(prediction, target)
-        psnr = 10 * log10(1 / mse.data[0])
-        avg_psnr += psnr
-    
-    print("===> Avg. PSNR: {:.4f} dB".format(avg_psnr / len(testing_data_loader)))
-    
+            optim_D.zero_grad()
 
+            # print('discriminator(mask)', discriminator(mask).shape)
+            # print('valid', valid.shape)
+            real_loss = loss_adv(discriminator(mask), valid)
+            fake_loss = loss_adv(discriminator(g_output.detach()), fake)
 
-def checkpoint(epoch):
-    if not os.path.exists("checkpoint"):
-        os.mkdir("checkpoint")
-    if not os.path.exists(os.path.join("checkpoint", opt.dataset)):
-        os.mkdir(os.path.join("checkpoint", opt.dataset))
-    net_g_model_out_path = "checkpoint/{}/netG_model_epoch_{}.pth".format(opt.dataset, epoch)
-    net_d_model_out_path = "checkpoint/{}/netD_model_epoch_{}.pth".format(opt.dataset, epoch)
-    torch.save(netG.state_dict(), net_g_model_out_path)
-    torch.save(netD.state_dict(), net_d_model_out_path)
-    print("Checkpoint saved to {}".format("checkpoint" + opt.dataset))
+            d_loss = (real_loss + fake_loss) / 2
+
+            d_loss.backward(retain_graph=True)
+            optim_D.step()
+
+            print(
+                "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
+                % (epoch, args.epoch, i_batch, len(dataloader), d_loss.item(), g_loss.item())
+            )
 
 
+            writer.add_scalar('D_loss', d_loss.item(), epoch * len(dataloader) + i_batch)
+            writer.add_scalar('G_loss', g_loss.item(), epoch * len(dataloader) + i_batch)
+            
+            # img_grid = torchvision.utils.make_grid(
+            #     tensor,  # 图像数据，B x C x H x W 形式
+            #     nrow=8,  # 一行显示 nrow 个
+            #     padding=2,  # 图像间距（像素单位）
+            #     normalize=False,  # 是否将像素值标准化，默认为 False。通常网络中的图片像素值比较小，要可视化之前需要标准化到0~255。
+            #     range=None,  # 截断范围。譬如，若像素值范围在 0~255，传入 (100, 200)，则小于 100 的都会变为 100，大于 200 的都会变为 200。
+            #     scale_each=False,  # 是否单张图维度标准化，默认为 False
+            #     pad_value=0,  # 子图之间 padding 的像素值
+            #     ) 
 
-for epoch in range(1, opt.nEpochs + 1):
-    train(epoch)
-    test()
-    if epoch % 2 == 0:
-        checkpoint(epoch)
+            if i_batch % 200 == 0:
+                img_grid = torchvision.utils.make_grid(img, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
+                writer.add_images('input', img_grid, epoch * len(dataloader) + i_batch, dataformats='CHW')
+                mask_grid = torchvision.utils.make_grid(mask, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
+                writer.add_images('mask', mask_grid, epoch * len(dataloader) + i_batch, dataformats='CHW')
+                g_output_grid = torchvision.utils.make_grid(g_output, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
+                writer.add_images('output', g_output_grid, epoch * len(dataloader) + i_batch, dataformats='CHW')
+
+            # best model save
+
+
+        # test?
+        generator.eval()
+
+
+        torch.save(generator.state_dict(), './save_model/save_G/final_generator.pth')
+        torch.save(discriminator.state_dict(), './save_model/save_D/final_discriminator.pth')
