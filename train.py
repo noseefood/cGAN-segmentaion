@@ -3,14 +3,24 @@ from torch.autograd import Variable
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
 
+from monai.metrics import DiceMetric
 
 def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv, loss_rec):
 
+
     writer = SummaryWriter()  
+    # DICE metric from MONAI
+    dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
+    best_metric = -1
+    best_metric_epoch = -1
+
+    
+    batch_num = 0 
 
     for epoch in range(args.epoch):
         for i_batch, sample_batched in enumerate(dataloader):  # i_batch: steps
-
+            
+            batch_num += 1  #
             # update generator
 
             img, mask = sample_batched['image'], sample_batched['mask']
@@ -39,7 +49,6 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
             optim_G.step()
 
 
-
             # update discriminator
 
             optim_D.zero_grad()
@@ -60,6 +69,8 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
             )
 
 
+            # tensorboard log
+
             writer.add_scalar('D_loss', d_loss.item(), epoch * len(dataloader) + i_batch)
             writer.add_scalar('G_loss', g_loss.item(), epoch * len(dataloader) + i_batch)
             
@@ -73,7 +84,7 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
             #     pad_value=0,  # 子图之间 padding 的像素值
             #     ) 
 
-            if i_batch % 200 == 0:
+            if batch_num % 150 == 0:
                 img_grid = torchvision.utils.make_grid(img, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
                 writer.add_images('input', img_grid, epoch * len(dataloader) + i_batch, dataformats='CHW')
                 mask_grid = torchvision.utils.make_grid(mask, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
@@ -81,12 +92,36 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
                 g_output_grid = torchvision.utils.make_grid(g_output, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
                 writer.add_images('output', g_output_grid, epoch * len(dataloader) + i_batch, dataformats='CHW')
 
+
             # best model save
+            if batch_num % 200 == 0:
+                dice_metric(y_pred=g_output, y=mask)
+                metric = dice_metric.aggregate().item()
+                dice_metric.reset()
+
+                if metric > best_metric:
+
+                    best_metric = metric
+                    best_metric_epoch = epoch + 1
+
+                    torch.save(generator.state_dict(), './save_model/save_G/best_generator.pth')
+                    torch.save(discriminator.state_dict(), './save_model/save_D/best_discriminator.pth')
+                    print("saved new best metric model")
+
+                print(
+                    "current epoch: {} current mean dice: {:.4f} best mean dice: {:.4f} at epoch {}".format(
+                        epoch + 1, metric, best_metric, best_metric_epoch
+                    )
+                )
+                writer.add_scalar("val_mean_dice", metric, epoch + 1)
 
 
-        # test?
+            
+
+
+        # test
         generator.eval()
 
-
+        # final model save
         torch.save(generator.state_dict(), './save_model/save_G/final_generator.pth')
         torch.save(discriminator.state_dict(), './save_model/save_D/final_discriminator.pth')

@@ -16,12 +16,15 @@ from monai.transforms import (
     Resize,
     AddChannel,
 )
+from monai.metrics import DiceMetric
 
 from pathlib import Path
 base = Path(os.environ['raw_data_base']) if 'raw_data_base' in os.environ.keys() else Path('./data')
 assert base is not None, "Please assign the raw_data_base(which store the training data) in system path "
 dir_test = base / 'test/test_1'
 dir_checkpoint = '/home/xuesong/CAMP/segment/UAGAN/save_model/save_G/'
+
+
 
 import time
 
@@ -32,7 +35,7 @@ class NetworkInference():
 
         self.generator = Generator().to(self.device)  # input channel = 1
         self.generator.load_state_dict(torch.load(dir_checkpoint + "UAGAN_generator.pth"))
-        self.generator.eval()
+        self.generator.eval() # eval mode
 
 
         self.train_imtrans = Compose( # 输入模型的图片的预处理
