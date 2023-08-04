@@ -3,6 +3,10 @@ import cv2 as cv
 import torch
 import numpy as np
 
+# TODO: add transform
+import albumentations as A  # Augmentation library
+
+
 class SegmentationDataset(object):
     def __init__(self, image_dir, mask_dir):
         self.images = []
@@ -12,15 +16,25 @@ class SegmentationDataset(object):
         for i in range(len(sfiles)):
             img_file = os.path.join(image_dir, files[i])
             mask_file = os.path.join(mask_dir, sfiles[i])
-            # print(img_file, mask_file)
             self.images.append(img_file)
             self.masks.append(mask_file)
+
+        # augmentation
+        self.transform = A.Compose([
+                    A.HorizontalFlip(p=0.3),
+                    A.VerticalFlip(p=0.3),
+                    A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.5),
+                    A.GaussNoise(p=0.2),
+                ])
 
     def __len__(self):
         return len(self.images)
 
     def num_of_samples(self):
         return len(self.images)
+    
+    # def transform(self, image, mask):
+    #     pass
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
@@ -30,6 +44,7 @@ class SegmentationDataset(object):
         else:
             image_path = self.images[idx]
             mask_path = self.masks[idx]
+            
         img = cv.imread(image_path, cv.IMREAD_GRAYSCALE)  # BGR order
         mask = cv.imread(mask_path, cv.IMREAD_GRAYSCALE)
         
@@ -39,6 +54,9 @@ class SegmentationDataset(object):
         mask = cv.resize(mask, (480, 480))
         ###############################
 
+        transformed = self.transform(image=img, mask=mask)  # 必须一起输入才能保证对img/mask统一的变换
+        img = transformed["image"]
+        mask = transformed["mask"]        
 
         # img = cv.cvtColor(img,cv.COLOR_GRAY2RGB)
 
@@ -53,4 +71,6 @@ class SegmentationDataset(object):
         mask = np.expand_dims(mask, 0) # 增加通道维度
 
         sample = {'image': torch.from_numpy(img), 'mask': torch.from_numpy(mask), }
+
+
         return sample

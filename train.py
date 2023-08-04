@@ -97,7 +97,7 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
             if batch_num % 200 == 0:
                 dice_metric(y_pred=g_output, y=mask)
                 metric = dice_metric.aggregate().item()
-                dice_metric.reset()
+                dice_metric.reset()  
 
                 if metric > best_metric:
 
