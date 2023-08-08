@@ -74,7 +74,7 @@ class NetworkInference():
 
 
 
-class BasicUSPlayer():
+class Evaluation():
     def __init__(self, mode = "water"):
 
         if mode == "water": # water
@@ -125,5 +125,5 @@ class BasicUSPlayer():
 
 if __name__ == "__main__":
     US_mode = "pork-missaligen" # "water" "pork-missaligen" "pork-3Dsegmentaion"
-    usPlayter = BasicUSPlayer(mode = US_mode)
-    usPlayter.start()
+    eval = Evaluation(mode = US_mode)
+    eval.start()

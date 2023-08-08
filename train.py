@@ -38,11 +38,11 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
 
             g_output = generator(img)  # predicted mask
 
-            loss_adv_ = loss_adv(discriminator(g_output), valid)
+            loss_adv_ = loss_adv(discriminator(g_output), valid) # discriminator结果的loss
 
             mask = mask.float()
 
-            loss_rec_ = loss_rec(g_output, mask)
+            loss_rec_ = loss_rec(g_output, mask) # 即基本的分割loss
             g_loss = (loss_adv_ + loss_rec_) / 2
 
             g_loss.backward()
@@ -93,27 +93,17 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
                 writer.add_images('output', g_output_grid, epoch * len(dataloader) + i_batch, dataformats='CHW')
 
 
-            # best model save
-            if batch_num % 200 == 0:
-                dice_metric(y_pred=g_output, y=mask)
-                metric = dice_metric.aggregate().item()
-                dice_metric.reset()  
+            # current model save
+            if batch_num % 500 == 0:
 
-                if metric > best_metric:
+                cur_metric_epoch = epoch + 1
 
-                    best_metric = metric
-                    best_metric_epoch = epoch + 1
+                torch.save(generator.state_dict(), './save_model/save_G/generator_'+ str(batch_num) +'.pth')
+                torch.save(discriminator.state_dict(), './save_model/save_D/discriminator_'+ str(batch_num) +'.pth')
+                print("saved current metric model in ", batch_num)
 
-                    torch.save(generator.state_dict(), './save_model/save_G/best_generator.pth')
-                    torch.save(discriminator.state_dict(), './save_model/save_D/best_discriminator.pth')
-                    print("saved new best metric model")
 
-                print(
-                    "current epoch: {} current mean dice: {:.4f} best mean dice: {:.4f} at epoch {}".format(
-                        epoch + 1, metric, best_metric, best_metric_epoch
-                    )
-                )
-                writer.add_scalar("val_mean_dice", metric, epoch + 1)
+                # writer.add_scalar("val_mean_dice", metric, epoch + 1)
 
 
             
