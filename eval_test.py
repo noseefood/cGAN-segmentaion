@@ -3,10 +3,12 @@ import os
 import sys
 from glob import glob
 import cv2
-
+import time
 import torch
 from PIL import Image
+import numpy as np
 
+import monai
 from monai.transforms import (
     Activations,
     AsDiscrete,
@@ -16,30 +18,97 @@ from monai.transforms import (
     Resize,
     AddChannel,
 )
-from monai.metrics import DiceMetric
-
-from pathlib import Path
-base = Path(os.environ['raw_data_base']) if 'raw_data_base' in os.environ.keys() else Path('./data')
-assert base is not None, "Please assign the raw_data_base(which store the training data) in system path "
-dir_test = base / 'test/test_1'
-# dir_checkpoint = '/home/xuesong/CAMP/segment/UAGAN/save_model/save_G/'
-dir_checkpoint = '/home/xuesong/CAMP/segment/cGAN-segmentaion/data/models/05.08/runs/generator_26500.pth'
+from monai.networks.nets import UNet, AttentionUnet
 
 
-import time
+dir_test = '/home/xuesong/CAMP/dataset/datasetTest_080823/test_dataset/'
+dir_checkpoint_GAN = '/home/xuesong/CAMP/segment/cGAN-segmentaion/data/models/05.08/runs/generator_26500.pth'
 
-class NetworkInference():
+
+
+class NetworkInference_Unet():
+    def __init__(self, mode = "pork", method = "Unet"):
+        monai.config.print_config()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.model = None
+        if method == "AttentionUnet":
+            self.model = AttentionUnet(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                channels=(16, 32, 64, 128, 256),
+                strides=(2, 2, 2, 2),  
+                kernel_size=3,
+            ).to(self.device)   
+            self.model.load_state_dict(torch.load("/home/xuesong/CAMP/segment/selfMonaiSegment/best_metric_model_AttentionUnet.pth"))
+
+        elif method == "Unet":
+            self.model = UNet(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                channels=(16, 32, 64, 128, 256),
+                strides=(2, 2, 2, 2),
+                num_res_units=2,
+            ).to(self.device)
+            self.model.load_state_dict(torch.load("/home/xuesong/CAMP/segment/selfMonaiSegment/best_metric_model_Unet.pth"))
+
+
+        self.model.eval()
+
+        self.train_imtrans = Compose( # 输入模型的图片的预处理
+            [   
+                AddChannel(),  # 增加通道维度
+                Resize((512, 512)), # 必须要加入这个，否则会报错，这里相当于直接拉伸，跟training保持一致
+                ScaleIntensity(), # 其实就是归一化
+            ]
+        )
+        self.post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+        self.tf = Compose([Resize((657, 671)),])
+
+    def inference(self, img, tf = None):
+        with torch.no_grad():
+            img = self.train_imtrans(img) # compose会自动返回tensor torch.Size([1, 512, 512])
+
+            img = img.to(self.device) # torch.Size([1, 512, 512])   HWC to CHW：img_trans = img_nd.transpose((2, 0, 1))
+            img = img.unsqueeze(0) # torch.Size([1, 1, 512, 512]) unsqueeze扩增维度
+            
+            # # 因为这里没有使用dataloader读取，所以不需要转置，输出可以直接与原图对比
+            # img = img.transpose(-1,-2) # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 注意这里与inference.py不同，这里不需要转置，以为读取图片的方式不一样！
+
+            output = self.model(img)
+            result = self.post_trans(output) # torch.Size([1, 1, 512, 512])
+
+            probs = result.squeeze(0) # squeeze压缩维度 torch.Size([1, 512, 512])
+            
+            if tf is not None:
+                self.tf = tf
+
+            probs = self.tf(probs.cpu()) # 重新拉伸到原来的大小
+
+            full_mask = probs.squeeze().cpu().numpy() # return in cpu  # 
+            
+            # cv2.imshow("full_mask", full_mask)
+            # cv2.waitKey(0)
+
+            return full_mask
+
+
+
+class NetworkInference_GAN():
+    
     def __init__(self, mode = "pork"):
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.generator = Generator().to(self.device)  # input channel = 1
         # self.generator.load_state_dict(torch.load(dir_checkpoint + "UAGAN_generator.pth"))
-        self.generator.load_state_dict(torch.load(dir_checkpoint))
+        self.generator.load_state_dict(torch.load(dir_checkpoint_GAN))
         self.generator.eval() # eval mode
 
 
-        self.train_imtrans = Compose( # 输入模型的图片的预处理
+        self.train_imtrans = Compose( # 预处理
             [   
                 AddChannel(),  # 增加通道维度
                 Resize((480, 480)), # 必须要加入这个，否则会报错，这里相当于直接拉伸，跟training保持一致
@@ -47,7 +116,7 @@ class NetworkInference():
             ]
         )
         # self.post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])  # 这里不需要sigmoid，因为网络中已经有了sigmoid
-        self.tf = Compose([Resize((657, 671)),])  # 重新拉伸到原来的大小
+        self.tf = Compose([Resize((657, 671)), AsDiscrete(threshold=0.5)])  # 重新拉伸到原来的大小, 别忘了asdiscrete
 
     def inference(self, img):
         
@@ -57,73 +126,76 @@ class NetworkInference():
 
             img = img.to(self.device) # torch.Size([1, 512, 512])   HWC to CHW：img_trans = img_nd.transpose((2, 0, 1))
             img = img.unsqueeze(0) # torch.Size([1, 1, 512, 512]) unsqueeze扩增维度
-            
             # # 因为这里没有使用dataloader读取，所以不需要转置，输出可以直接与原图对比
             # img = img.transpose(-1,-2) # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 注意这里与inference.py不同，这里不需要转置，以为读取图片的方式不一样！
 
             output = self.generator(img)
-            # result = self.post_trans(output) # torch.Size([1, 1, 512, 512])
 
             probs = output.squeeze(0) # squeeze压缩维度 torch.Size([1, 512, 512])
             probs = self.tf(probs.cpu()) # 重新拉伸到原来的大小
             full_mask = probs.squeeze().cpu().numpy() # return in cpu  # 
-            
             # cv2.imshow("full_mask", full_mask)
             
             return full_mask
 
-
+# Dice similarity function
+def dice(pred, true, k = 1):
+    intersection = np.sum(pred[true==k]) * 2.0
+    dice = intersection / (np.sum(pred) + np.sum(true))
+    return dice
 
 class Evaluation():
-    def __init__(self, mode = "water"):
+    
+    def __init__(self, mode = "1"):
 
-        if mode == "water": # water
-            self.VideoCap = cv2.VideoCapture('/home/xuesong/CAMP/dataset/video_sim/water_tank.avi')
-            self.net = NetworkInference("water")
-        elif mode == "pork-missaligen": # insertion-needle
-            self.VideoCap = cv2.VideoCapture('/home/xuesong/CAMP/dataset/video_sim/pork_insertion_newProk17.avi')
-            self.net = NetworkInference("pork")
-        elif mode == "pork-3Dsegmentaion": # compounding-needle
-            self.VideoCap = cv2.VideoCapture('/home/xuesong/CAMP/dataset/video_sim/pork_compounding.avi')
-            self.net = NetworkInference("pork")
+        self.dataPath = dir_test + mode
+        self.net_GAN = NetworkInference_GAN("pork")
+        self.net_Unet = NetworkInference_Unet("pork", method = "Unet")  # "Unet" or "AttentionUnet" for comparison
 
-        self.num_frames =  self.VideoCap.get(cv2.CAP_PROP_FRAME_COUNT)
-        self.frame_counter = 0 
-        self.ControlSpeedVar = 50
-        self.HiSpeed = 100
+        print("dataPath:", self.dataPath)
+        self.imgs = glob(self.dataPath + '/imgs' +"/*.png")
+        self.masks = glob(self.dataPath + '/masks' +"/*.png") 
+        self.imgs.sort()
+        self.masks.sort()
 
     def start(self):
 
-        print("All frames number:", self.num_frames)
+        assert len(self.imgs) == len(self.masks), \
+            f'len(self.imgs) should be equal to len(self.masks), but got {len(self.imgs)} vs {len(self.masks)}'
 
-        while(True):
+        print("All frames number:", len(self.imgs))
 
-            ret, frame = self.VideoCap.read()
+        dice_list_GAN = []
+        dice_list_Unet = []
 
-            self.frame_counter += 1
-            if self.frame_counter == int(self.VideoCap.get(cv2.CAP_PROP_FRAME_COUNT)):
-                self.frame_counter = 0
-                self.VideoCap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        for i,(input, target) in enumerate(zip(self.imgs,self.masks)):
+            
+            img = cv2.imread(input)
+            true_mask = cv2.imread(target) 
+            true_mask = cv2.cvtColor(true_mask, cv2.COLOR_BGR2GRAY) * 255
 
-            ###############################
-            # 2D filter
-            time_start = time.time()
-            mask = self.net.inference(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))  # from 3-channels into 1-channel Gray
-            time_end = time.time()
-            print('totally cost', time_end-time_start, ' seconds')
+            output_Gan = self.net_GAN.inference(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)) * 255
+            output_Unet = self.net_Unet.inference(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)) * 255
+            
+            cv2.imshow("output_GAN", output_Gan)
+            cv2.imshow("output_Unet", output_Unet)
 
-            cv2.imshow('frame', frame)
-            cv2.imshow('mask', mask)
-            ###############################
+            cv2.imshow("frame", img)
+            cv2.imshow("true_mask", true_mask)
+            
+            dice_list_GAN.append(dice(output_Gan, true_mask, k = 255))
+            dice_list_Unet.append(dice(output_Unet, true_mask, k = 255))
 
-            k = cv2.waitKey(30) & 0xff
-            if k == 27: # ESC key to exit
-                break
-            cv2.waitKey(self.HiSpeed-self.ControlSpeedVar+1)
-        cv2.destroyAllWindows()
-        self.VideoCap.release()
+            cv2.waitKey(10)
+
+        # print("dice_list:", dice_list)
+        print("dice_list mean based GAN:", np.nanmean(dice_list_GAN))
+        print("dice_list mean based Unet:", np.nanmean(dice_list_Unet))
+
+        
+
 
 if __name__ == "__main__":
-    US_mode = "pork-missaligen" # "water" "pork-missaligen" "pork-3Dsegmentaion"
-    eval = Evaluation(mode = US_mode)
+    test_mode = "2" # 1/2 compounding 3/4 insertion
+    eval = Evaluation(mode = test_mode)
     eval.start()
