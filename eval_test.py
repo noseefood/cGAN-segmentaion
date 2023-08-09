@@ -7,7 +7,6 @@ import time
 import torch
 from PIL import Image
 import numpy as np
-
 import monai
 from monai.transforms import (
     Activations,
@@ -21,17 +20,33 @@ from monai.transforms import (
 from monai.networks.nets import UNet, AttentionUnet
 
 
-dir_test = '/home/xuesong/CAMP/dataset/datasetTest_080823/test_dataset/'
-dir_checkpoint_GAN = '/home/xuesong/CAMP/segment/cGAN-segmentaion/data/models/05.08/runs/generator_26500.pth'
 
+# Dice similarity function
+def dice(pred, true, k = 1):
+    intersection = np.sum(pred[true==k]) * 2.0
+    dice = intersection / (np.sum(pred) + np.sum(true))
+    return dice
+
+def calculate_iou(gt_mask, pred_mask, cls=255):
+    '''cls 为二值化的max值,比如255'''
+    '''miou可解释为平均交并比,即在每个类别上计算IoU值,然后求平均值,在这里等价于iou'''
+    pred_mask = (pred_mask == cls) * 1
+    gt_mask = (gt_mask == cls) * 1
+
+    overlap = pred_mask * gt_mask  # Logical AND
+    union = (pred_mask + gt_mask) > 0  # Logical OR
+    iou = overlap.sum() / float(union.sum())
+
+    return iou
 
 
 class NetworkInference_Unet():
     def __init__(self, mode = "pork", method = "Unet"):
+
         monai.config.print_config()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         self.model = None
+        \
         if method == "AttentionUnet":
             self.model = AttentionUnet(
                 spatial_dims=2,
@@ -53,7 +68,6 @@ class NetworkInference_Unet():
                 num_res_units=2,
             ).to(self.device)
             self.model.load_state_dict(torch.load("/home/xuesong/CAMP/segment/selfMonaiSegment/best_metric_model_Unet.pth"))
-
 
         self.model.eval()
 
@@ -95,10 +109,11 @@ class NetworkInference_Unet():
             return full_mask
 
 
-
 class NetworkInference_GAN():
     
     def __init__(self, mode = "pork"):
+
+        dir_checkpoint_GAN = '/home/xuesong/CAMP/segment/cGAN-segmentaion/data/models/05.08/runs/generator_26500.pth'
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -138,19 +153,29 @@ class NetworkInference_GAN():
             
             return full_mask
 
-# Dice similarity function
-def dice(pred, true, k = 1):
-    intersection = np.sum(pred[true==k]) * 2.0
-    dice = intersection / (np.sum(pred) + np.sum(true))
-    return dice
+
+SMOOTH = 1e-6
+def iou_numpy(outputs: np.array, labels: np.array):
+    outputs = outputs.squeeze(1)
+
+    intersection = (outputs & labels).sum((1, 2))
+    union = (outputs | labels).sum((1, 2))
+
+    iou = (intersection + SMOOTH) / (union + SMOOTH)
+
+    thresholded = np.ceil(np.clip(20 * (iou - 0.7), 0, 10)) / 10
+
+    return thresholded  
+
+
 
 class Evaluation():
     
     def __init__(self, mode = "1"):
 
-        self.dataPath = dir_test + mode
+        self.dataPath = '/home/xuesong/CAMP/dataset/datasetTest_080823/test_dataset/' + mode
         self.net_GAN = NetworkInference_GAN("pork")
-        self.net_Unet = NetworkInference_Unet("pork", method = "Unet")  # "Unet" or "AttentionUnet" for comparison
+        self.net_Unet = NetworkInference_Unet("pork", method = "AttentionUnet")  # "Unet" or "AttentionUnet" for comparison
 
         print("dataPath:", self.dataPath)
         self.imgs = glob(self.dataPath + '/imgs' +"/*.png")
@@ -167,6 +192,8 @@ class Evaluation():
 
         dice_list_GAN = []
         dice_list_Unet = []
+        iou_list_GAN = []
+        iou_list_Unet = []
 
         for i,(input, target) in enumerate(zip(self.imgs,self.masks)):
             
@@ -174,26 +201,82 @@ class Evaluation():
             true_mask = cv2.imread(target) 
             true_mask = cv2.cvtColor(true_mask, cv2.COLOR_BGR2GRAY) * 255
 
-            output_Gan = self.net_GAN.inference(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)) * 255
-            output_Unet = self.net_Unet.inference(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)) * 255
-            
+            output_Gan = self.net_GAN.inference(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
+            output_Unet = self.net_Unet.inference(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
+            output_Gan = cv2.normalize(output_Gan, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
+            output_Unet = cv2.normalize(output_Unet, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
+
+            # print("Image data type:", output_Gan.dtype)
+            # print("Image data type:", output_Unet.dtype)
+
             cv2.imshow("output_GAN", output_Gan)
             cv2.imshow("output_Unet", output_Unet)
 
-            cv2.imshow("frame", img)
-            cv2.imshow("true_mask", true_mask)
+
+
+            ################### box analyse ############################
+           
+            cnts_GAN = cv2.findContours(output_Gan, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]  # im2,contours,hierarchy = cv.findContours(thresh, 1, 2)
+            cnts_Unet = cv2.findContours(output_Unet, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+            cnts_Mask = cv2.findContours(true_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+
+            # minAreaRect
+            self.vis_minAreaRect(img, output_Gan, cnts_GAN, color=(0, 0, 255)) # BGR red
+            self.vis_minAreaRect(img, output_Unet, cnts_Unet, color=(0, 255, 0)) # BGR green
+            self.vis_minAreaRect(img, true_mask, cnts_Mask, color=(255, 0, 0)) # BGR blue
+
+
+
+            # maxAreaRect
+            self.vis_maxAreaRect(img, output_Gan, cnts_GAN, color=(0, 0, 255))
+            self.vis_maxAreaRect(img, output_Unet, cnts_Unet, color=(0, 255, 0))
+            self.vis_maxAreaRect(img, true_mask, cnts_Mask, color=(255, 0, 0))
+
+
             
+            ##############################################
+            # ioU 
+            iou_gan = calculate_iou(true_mask, output_Gan)
+            iou_unet = calculate_iou(true_mask, output_Unet)
+            # print("IOU score(GAN):", iou_gan)
+            # print("IOU score(Unet):", iou_unet)
+            iou_list_GAN.append(iou_gan)
+            iou_list_Unet.append(iou_unet)
+
+            # dice
             dice_list_GAN.append(dice(output_Gan, true_mask, k = 255))
             dice_list_Unet.append(dice(output_Unet, true_mask, k = 255))
 
-            cv2.waitKey(10)
+            # final visualizaion
+            cv2.imshow("current frame(red:GAN, green:Unet, blue:gt)", img)
+            cv2.imshow("true_mask", true_mask)
+            # cv2.waitKey(50)
+
+            cv2.waitKey(0)
 
         # print("dice_list:", dice_list)
-        print("dice_list mean based GAN:", np.nanmean(dice_list_GAN))
+        print("dice_list mean based GAN:", np.nanmean(dice_list_GAN))  # nanmean忽略nan值,忽略最前面的几帧
         print("dice_list mean based Unet:", np.nanmean(dice_list_Unet))
 
-        
+        print("iou_list mean based GAN:", np.nanmean(iou_list_GAN))
+        print("iou_list mean based Unet:", np.nanmean(iou_list_Unet))
 
+    def vis_maxAreaRect(self, img, mask, cnts, color=(255, 0, 0)):
+
+        if len(cnts) != 0:
+            cnt = sorted(cnts, key=cv2.contourArea, reverse=True)[0]
+            x,y,w,h = cv2.boundingRect(cnt)
+            img = cv2.rectangle(img,(x,y),(x+w,y+h),color,2)
+
+
+    def vis_minAreaRect(self, img, mask, cnts, color=(255, 0, 0)):
+
+        if len(cnts) != 0:
+            cnt = sorted(cnts, key=cv2.contourArea, reverse=True)[0]
+            rbox = cv2.minAreaRect(cnt)
+            pts = cv2.boxPoints(rbox).astype(np.int32)
+            cv2.drawContours(img, [pts], -1, color, 2, cv2.LINE_AA) 
+        
 
 if __name__ == "__main__":
     test_mode = "2" # 1/2 compounding 3/4 insertion
