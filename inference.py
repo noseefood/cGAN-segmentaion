@@ -67,8 +67,7 @@ class NetworkInference():
             probs = output.squeeze(0) # squeeze压缩维度 torch.Size([1, 512, 512])
             probs = self.tf(probs.cpu()) # 重新拉伸到原来的大小
             full_mask = probs.squeeze().cpu().numpy() # return in cpu  # 
-            
-            # cv2.imshow("full_mask", full_mask)
+
             
             return full_mask
 
