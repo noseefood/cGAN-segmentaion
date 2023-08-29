@@ -19,11 +19,14 @@ class Discriminator(nn.Module):
 
         # The height and width of downsampled image
         ds_size = 480 // 2 ** 4
-        self.adv_layer = nn.Sequential(nn.Linear(128 * ds_size ** 2, 1), nn.Sigmoid())
+        self.adv_layer = nn.Sequential(nn.Linear(128 * ds_size ** 2, 1), nn.Sigmoid()) # 128, 30, 30
 
     def forward(self, img):
         out = self.model(img)
-        out = out.view(out.shape[0], -1)
+        out = out.view(out.shape[0], -1) #
+
         validity = self.adv_layer(out)
+
+        # print("validity", validity.shape) # torch.Size([8, 1])
 
         return validity

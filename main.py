@@ -24,7 +24,7 @@ discriminator = Discriminator().cuda()
 optim_G = torch.optim.Adam(generator.parameters(), lr=args.lr, betas=(args.b1, args.b2))
 optim_D = torch.optim.Adam(discriminator.parameters(), lr=args.lr, betas=(args.b1, args.b2))
 
-loss_adv = torch.nn.BCELoss().cuda()
+loss_adv = torch.nn.BCELoss().cuda() # 二分类交叉熵
 loss_rec = torch.nn.MSELoss().cuda()
 
 train(args, dataloader, generator, discriminator,optim_G, optim_D, loss_adv, loss_rec)

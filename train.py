@@ -25,8 +25,9 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
 
             img, mask = sample_batched['image'], sample_batched['mask']
 
-            valid = Variable(torch.cuda.FloatTensor(mask.size(0), 1).fill_(1.0), requires_grad=False)  # for discriminator
-            fake = Variable(torch.cuda.FloatTensor(img.size(0), 1).fill_(0.0), requires_grad=False) # for discriminator
+            valid = Variable(torch.cuda.FloatTensor(mask.size(0), 1).fill_(1.0), requires_grad=False)  # for discriminator 1为真   
+            fake = Variable(torch.cuda.FloatTensor(img.size(0), 1).fill_(0.0), requires_grad=False) # for discriminator 0为假
+            print("mask.size(0)", mask.size(0)) # mask.size(0) 8
 
             valid = valid.cuda()
             fake = fake.cuda()
@@ -38,11 +39,15 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
 
             g_output = generator(img)  # predicted mask
 
-            loss_adv_ = loss_adv(discriminator(g_output), valid) # discriminator结果的loss
+            print("discriminator(g_output)", discriminator(g_output).shape) # torch.Size([8, 1])
+            print("valid shape", valid.shape) # torch.Size([8, 1]) 
+
+            # loss_adv: 二分类交叉熵 BCELoss
+            loss_adv_ = loss_adv(discriminator(g_output), valid) # discriminator结果的loss,用discriminator区分真假然后计算loss,对于generator来说,希望discriminator无法区分出真假,所以与valid的loss越小越好
 
             mask = mask.float()
 
-            loss_rec_ = loss_rec(g_output, mask) # 即基本的分割loss
+            loss_rec_ = loss_rec(g_output, mask) # 即基本的分割loss MSELoss
             g_loss = (loss_adv_ + loss_rec_) / 2
 
             g_loss.backward()
@@ -55,8 +60,8 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
 
             # print('discriminator(mask)', discriminator(mask).shape)
             # print('valid', valid.shape)
-            real_loss = loss_adv(discriminator(mask), valid)
-            fake_loss = loss_adv(discriminator(g_output.detach()), fake)
+            real_loss = loss_adv(discriminator(mask), valid) # 能不能区分出真实的mask 二分类交叉熵 BCELoss
+            fake_loss = loss_adv(discriminator(g_output.detach()), fake)  # 能不能区分出虚假的mask 二分类交叉熵 BCELoss
 
             d_loss = (real_loss + fake_loss) / 2
 
