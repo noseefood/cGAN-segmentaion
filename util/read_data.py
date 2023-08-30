@@ -49,9 +49,9 @@ class SegmentationDataset(object):
         mask = cv.imread(mask_path, cv.IMREAD_GRAYSCALE)
         
 
-        ########### 原始代码这里没有加resize 这个模型是480*480输入的
-        img = cv.resize(img, (480, 480))
-        mask = cv.resize(mask, (480, 480))
+        ########### 原始代码这里没有加resize 这个模型是480*480输入的, for AttentionUNet是512*512
+        img = cv.resize(img, (512, 512))
+        mask = cv.resize(mask, (512, 512))
         ###############################
 
         transformed = self.transform(image=img, mask=mask)  # 必须一起输入才能保证对img/mask统一的变换
@@ -60,7 +60,7 @@ class SegmentationDataset(object):
 
         # img = cv.cvtColor(img,cv.COLOR_GRAY2RGB)
 
-        # 输入图像
+        # 输入图像 preprocessing
         img = np.float32(img) / 255.0
         img = np.expand_dims(img, 0) # 增加通道维度  
         # print('img.shape', img.shape)
