@@ -23,7 +23,7 @@ class SegmentationDataset(object):
         self.transform = A.Compose([
                     A.HorizontalFlip(p=0.3),
                     A.VerticalFlip(p=0.3),
-                    A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.5),
+                    A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.3),
                     A.GaussNoise(p=0.2),
                 ])
 

@@ -23,10 +23,10 @@ from config import input_args
 import monai
 from monai.metrics import DiceMetric
 
+Lambda = 0.65
 
 
-
-def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv, loss_rec):
+def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg):
 
 
     writer = SummaryWriter()  
@@ -68,8 +68,10 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
 
             mask = mask.float()
 
-            loss_rec_ = loss_rec(g_output, mask) # 即基本的分割loss MSELoss
-            g_loss = (loss_adv_ + loss_rec_) / 2
+            loss_seg_ = loss_seg(g_output, mask) # 即基本的分割loss(from MSELoss into dice loss)
+            # g_loss = (loss_adv_ + loss_seg_) / 2  
+            # SLoss =  CrossEntropy(Generated, Actual) + Lambda*BinaryCrossEntropyLoss(discriminator(Fake_Label_Map), Ones)
+            g_loss = Lambda * loss_adv_  + loss_seg_  # 二者的loss都要考虑,常见写法是完整的segloss加上部分的advloss(防止advloss过大导致segloss无法优化)
 
             g_loss.backward()
             optim_G.step()
@@ -168,10 +170,10 @@ discriminator = Discriminator().cuda()
 optim_G = torch.optim.Adam(generator.parameters(), lr=args.lr, betas=(args.b1, args.b2))
 optim_D = torch.optim.Adam(discriminator.parameters(), lr=args.lr, betas=(args.b1, args.b2))
 
-loss_adv = torch.nn.BCELoss().cuda() # 二分类交叉熵 特别针对于GAN
-# loss_rec = torch.nn.MSELoss().cuda() # 基本的分割loss
-loss_rec = monai.losses.DiceLoss(sigmoid=True) # DICE loss
+loss_adv = torch.nn.BCELoss().cuda() # 二分类交叉熵 特别针对于GAN adverserial loss
+# loss_seg = torch.nn.MSELoss().cuda() # 基本的分割loss
+loss_seg = monai.losses.DiceLoss(sigmoid=True) # DICE loss
 
-train(args, dataloader, generator, discriminator,optim_G, optim_D, loss_adv, loss_rec)
+train(args, dataloader, generator, discriminator,optim_G, optim_D, loss_adv, loss_seg)
 
 
