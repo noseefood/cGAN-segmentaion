@@ -48,7 +48,7 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
 
             valid = Variable(torch.cuda.FloatTensor(mask.size(0), 1).fill_(1.0), requires_grad=False)  # for discriminator 1为真   
             fake = Variable(torch.cuda.FloatTensor(img.size(0), 1).fill_(0.0), requires_grad=False) # for discriminator 0为假
-            print("mask.size(0)", mask.size(0)) # mask.size(0) 8
+            # print("mask.size(0)", mask.size(0)) # mask.size(0) 8
 
             valid = valid.cuda()
             fake = fake.cuda()
@@ -60,8 +60,8 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
 
             g_output = generator(img)  # predicted mask
 
-            print("discriminator(g_output)", discriminator(g_output).shape) # torch.Size([8, 1])
-            print("valid shape", valid.shape) # torch.Size([8, 1]) 
+            # print("discriminator(g_output)", discriminator(g_output).shape) # torch.Size([8, 1])
+            # print("valid shape", valid.shape) # torch.Size([8, 1]) 
 
             # loss_adv: 二分类交叉熵 BCELoss
             loss_adv_ = loss_adv(discriminator(g_output), valid) # discriminator结果的loss,用discriminator区分真假然后计算loss,对于generator来说,希望discriminator无法区分出真假,所以与valid的loss越小越好
@@ -72,6 +72,8 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
             # g_loss = (loss_adv_ + loss_seg_) / 2  
             # SLoss =  CrossEntropy(Generated, Actual) + Lambda*BinaryCrossEntropyLoss(discriminator(Fake_Label_Map), Ones)
             g_loss = Lambda * loss_adv_  + loss_seg_  # 二者的loss都要考虑,常见写法是完整的segloss加上部分的advloss(防止advloss过大导致segloss无法优化)
+            print("loss_adv_", loss_adv_)
+            print("loss_seg_", loss_seg_)
 
             g_loss.backward()
             optim_G.step()
@@ -172,7 +174,8 @@ optim_D = torch.optim.Adam(discriminator.parameters(), lr=args.lr, betas=(args.b
 
 loss_adv = torch.nn.BCELoss().cuda() # 二分类交叉熵 特别针对于GAN adverserial loss
 # loss_seg = torch.nn.MSELoss().cuda() # 基本的分割loss
-loss_seg = monai.losses.DiceLoss(sigmoid=True) # DICE loss
+# loss_seg = monai.losses.DiceLoss(sigmoid=True).cuda()  # DICE loss, sigmoid参数会让输出的值最后经过sigmoid函数,(input,target)
+loss_seg = torch.nn.BCEWithLogitsLoss().cuda()
 
 train(args, dataloader, generator, discriminator,optim_G, optim_D, loss_adv, loss_seg)
 
