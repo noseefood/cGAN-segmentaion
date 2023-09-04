@@ -169,8 +169,8 @@ generator = monai.networks.nets.AttentionUnet(
 
 discriminator = Discriminator().cuda() 
 
-optim_G = torch.optim.Adam(generator.parameters(), lr=args.lr, betas=(args.b1, args.b2))
-optim_D = torch.optim.Adam(discriminator.parameters(), lr=args.lr, betas=(args.b1, args.b2))
+optim_G = torch.optim.Adam(generator.parameters(), lr=args.lrG, betas=(args.b1, args.b2))
+optim_D = torch.optim.Adam(discriminator.parameters(), lr=args.lrD, betas=(args.b1, args.b2))
 
 loss_adv = torch.nn.BCELoss().cuda() # 二分类交叉熵 特别针对于GAN adverserial loss
 # loss_seg = torch.nn.MSELoss().cuda() # 基本的分割loss
