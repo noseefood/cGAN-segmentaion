@@ -158,14 +158,23 @@ dataset = SegmentationDataset(args.image_dir, args.mask_dir)
 dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
 # generator = Generator().cuda()  # input channel = 1
+# generator = monai.networks.nets.AttentionUnet(
+#     spatial_dims=2,
+#     in_channels=1,
+#     out_channels=1,
+#     channels=(16, 32, 64, 128, 256),
+#     strides=(2, 2, 2, 2),  
+#     kernel_size=3,
+# ).to(device)  
 generator = monai.networks.nets.AttentionUnet(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    channels=(16, 32, 64, 128, 256),
+    channels=(32, 64, 128, 256, 512),
     strides=(2, 2, 2, 2),  
     kernel_size=3,
 ).to(device)  
+
 
 discriminator = Discriminator().cuda() 
 

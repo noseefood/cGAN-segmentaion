@@ -7,13 +7,16 @@ class Generator(torch.nn.Module):
         super(Generator, self).__init__()
         features = init_features
         self.encode_layer1 = torch.nn.Sequential(
-            torch.nn.Conv2d(in_channels=in_features, out_channels=features, kernel_size=3, padding=1, stride=1),
+            torch.nn.Conv2d(in_channels=in_features, out_channels=features, kernel_size=3, padding=1, stride=1),  # (512-3+2)/1+1=512 
             torch.nn.BatchNorm2d(num_features=features),
             torch.nn.ReLU(),
         )
 
+        # spatial attention: 就是对于所有的通道，在二维平面上，对H x W尺寸的特征图学习到一个权重，对每个像素都会学习到一个权重。你可以想象成一个像素是C维的一个向量，深度是C，在C个维度上，权重都是一样的，但是在平面上，权重不一样
+        # Channel Attention：就是对每个C（通道），在channel维度上，学习到不同的权重，平面维度上权重相同。所以基于通道域的注意力通常是对一个通道内的信息直接全局平均池化，而忽略每一个通道内的局部信息
+
         self.ca = ChannelAttentionModule(init_features)
-        self.sa = SpatialAttentionModule()
+        self.sa = SpatialAttentionModule() # 
 
         self.encode_layer1_half = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=features,
@@ -110,6 +113,7 @@ class Generator(torch.nn.Module):
         )
 
     def forward(self, x):
+        # cat结构类似UNet
         enc1 = self.encode_layer1(x)
         # print('enc1.shape', enc1.shape)
         ca = self.ca(enc1) * enc1
