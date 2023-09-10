@@ -23,7 +23,6 @@ from config import input_args
 import monai
 from monai.metrics import DiceMetric
 
-Lambda = 0.65
 
 
 def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg):
@@ -71,9 +70,9 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
             loss_seg_ = loss_seg(g_output, mask) # 即基本的分割loss(from MSELoss into dice loss)
             # g_loss = (loss_adv_ + loss_seg_) / 2  
             # SLoss =  CrossEntropy(Generated, Actual) + Lambda*BinaryCrossEntropyLoss(discriminator(Fake_Label_Map), Ones)
-            g_loss = Lambda * loss_adv_  + loss_seg_  # 二者的loss都要考虑,常见写法是完整的segloss加上部分的advloss(防止advloss过大导致segloss无法优化)
-            print("loss_adv_", loss_adv_)
-            print("loss_seg_", loss_seg_)
+            g_loss = 0.5 * loss_adv_  + 0.5 * loss_seg_  # 二者的loss都要考虑,常见写法是完整的segloss加上部分的advloss(防止advloss过大导致segloss无法优化)
+            print("loss_adv_", loss_adv_.item())
+            print("loss_seg_", loss_seg_.item())
 
             g_loss.backward()
             optim_G.step()
@@ -178,13 +177,17 @@ generator = monai.networks.nets.AttentionUnet(
 
 discriminator = Discriminator().cuda() 
 
-optim_G = torch.optim.Adam(generator.parameters(), lr=args.lrG, betas=(args.b1, args.b2))
-optim_D = torch.optim.Adam(discriminator.parameters(), lr=args.lrD, betas=(args.b1, args.b2))
+# optim_G = torch.optim.Adam(generator.parameters(), lr=args.lrG, betas=(args.b1, args.b2))
+# optim_D = torch.optim.Adam(discriminator.parameters(), lr=args.lrD, betas=(args.b1, args.b2))
+
+# Wasserstein GAN  improved(using RMSprop instead of Adam)
+optim_D = torch.optim.RMSprop(discriminator.parameters(), lr = args.lrD)
+optim_G = torch.optim.RMSprop(generator.parameters(), lr = args.lrG)
 
 loss_adv = torch.nn.BCELoss().cuda() # 二分类交叉熵 特别针对于GAN adverserial loss
 # loss_seg = torch.nn.MSELoss().cuda() # 基本的分割loss
-# loss_seg = monai.losses.DiceLoss(sigmoid=True).cuda()  # DICE loss, sigmoid参数会让输出的值最后经过sigmoid函数,(input,target)
-loss_seg = torch.nn.BCEWithLogitsLoss().cuda()
+loss_seg = monai.losses.DiceLoss(sigmoid=True).cuda()  # DICE loss, sigmoid参数会让输出的值最后经过sigmoid函数,(input,target)
+# loss_seg = torch.nn.BCEWithLogitsLoss().cuda()
 
 train(args, dataloader, generator, discriminator,optim_G, optim_D, loss_adv, loss_seg)
 

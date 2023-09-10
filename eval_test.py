@@ -47,15 +47,24 @@ class NetworkInference_GanPlusAttUnet():
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = None
 
-        self.model = AttentionUnet(
+        # self.model = AttentionUnet(
+        #     spatial_dims=2,
+        #     in_channels=1,
+        #     out_channels=1,
+        #     channels=(16, 32, 64, 128, 256),
+        #     strides=(2, 2, 2, 2),  
+        #     kernel_size=3,
+        # ).to(self.device)   
+        # self.model.load_state_dict(torch.load("/home/xuesong/CAMP/segment/cGAN-segmentaion/save_model/trained_model/04.09.AttUnet/save_G_update/generator_36500.pth"))
+        self.model = monai.networks.nets.AttentionUnet(
             spatial_dims=2,
             in_channels=1,
             out_channels=1,
-            channels=(16, 32, 64, 128, 256),
+            channels=(32, 64, 128, 256, 512),
             strides=(2, 2, 2, 2),  
             kernel_size=3,
-        ).to(self.device)   
-        self.model.load_state_dict(torch.load("/home/xuesong/CAMP/segment/cGAN-segmentaion/save_model/trained_model/04.09.AttUnet/save_G_update/generator_36500.pth"))
+        ).to(self.device)  
+        self.model.load_state_dict(torch.load("/home/xuesong/CAMP/segment/cGAN-segmentaion/save_model/trained_model/09.09.AttUnet/save_G_update/generator_39000.pth"))
 
         self.model.eval()
 
@@ -403,6 +412,6 @@ class Evaluation():
         
 
 if __name__ == "__main__":
-    test_mode = "2" # 1/2 compounding 3/4 insertion
+    test_mode = "3" # 1/2 compounding 3/4 insertion
     eval = Evaluation(mode = test_mode)
     eval.start()

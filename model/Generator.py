@@ -3,6 +3,8 @@ from model.Attention import ChannelAttentionModule, SpatialAttentionModule
 
 class Generator(torch.nn.Module):
 
+    # Unet的skip connections + spatial attentio + channel attention
+
     def __init__(self, in_features=1, out_features=1, init_features=32):
         super(Generator, self).__init__()
         features = init_features
@@ -145,7 +147,7 @@ class Generator(torch.nn.Module):
         # print('*dec1.shape',dec1.shape)
         # print('*enc1.shape',enc1.shape)
 
-        dec1 = torch.cat((dec1, enc1), dim=1)
+        dec1 = torch.cat((dec1, enc1), dim=1)  # 其实是类似UNet的结构
         # print('dec1.shape_after-cat',dec1.shape)
 
         dec1 = self.decode_layer1(dec1)

@@ -20,7 +20,10 @@ class Discriminator(nn.Module):
         # The height and width of downsampled image(final dense layer)
         # ds_size = 480 // 2 ** 4
         ds_size = 512 // 2 ** 4
+
+        # Output layers Wasserstein GAN improvement(Discriminator output no sigmoid!)
         self.adv_layer = nn.Sequential(nn.Linear(128 * ds_size ** 2, 1), nn.Sigmoid()) # 128, 30, 30
+        # self.adv_layer = nn.Sequential(nn.Linear(128 * ds_size ** 2, 1)) # 128, 30, 30
 
     def forward(self, img):
         out = self.model(img)
