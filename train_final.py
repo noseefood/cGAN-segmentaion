@@ -173,7 +173,7 @@ parser.add_argument('--image_dir', type=str, default='./data/imgs', help='input 
 parser.add_argument('--mask_dir', type=str, default='./data/masks', help='input mask path')
 parser.add_argument('--lrG', type=float, default='1e-4', help='learning rate')
 parser.add_argument('--lrD', type=float, default='5e-5', help='learning rate')
-parser.add_argument('--RMSprop', type=bool, default='False', help='RMSprop or Adam')
+parser.add_argument('--RMSprop', type=str, default='Adam', help='RMSprop or Adam')
 parser.add_argument('--batch_size', type=int, default='8', help='batch_size in training')
 parser.add_argument('--b1', type=float, default=0.5, help='adam: decay of first order momentum of gradient')
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
@@ -208,11 +208,13 @@ generator = Generator().to(device)   # input channel must be 1
 discriminator = Discriminator().to(device) 
 
 # define optimizer
-optim_G = torch.optim.Adam(generator.parameters(), lr=args.lrG, betas=(args.b1, args.b2))
-optim_D = torch.optim.Adam(discriminator.parameters(), lr=args.lrD, betas=(args.b1, args.b2))
-if args.RMSprop:
+
+if args.RMSprop == "RMSprop":
     optim_D = torch.optim.RMSprop(discriminator.parameters(), lr = args.lrD)
     optim_G = torch.optim.RMSprop(generator.parameters(), lr = args.lrG)
+else: 
+    optim_G = torch.optim.Adam(generator.parameters(), lr=args.lrG, betas=(args.b1, args.b2))
+    optim_D = torch.optim.Adam(discriminator.parameters(), lr=args.lrD, betas=(args.b1, args.b2))
 
 # define loss
 loss_adv = torch.nn.BCELoss().to(device) # 二分类交叉熵 特别针对于GAN adverserial loss
