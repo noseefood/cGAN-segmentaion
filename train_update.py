@@ -41,6 +41,7 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
         for i_batch, sample_batched in enumerate(dataloader):  # i_batch: steps
             
             batch_num += 1  #
+
             # update generator
 
             img, mask = sample_batched['image'], sample_batched['mask']
@@ -71,12 +72,13 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
             # g_loss = (loss_adv_ + loss_seg_) / 2  
             # SLoss =  CrossEntropy(Generated, Actual) + Lambda*BinaryCrossEntropyLoss(discriminator(Fake_Label_Map), Ones)
             g_loss = 0.5 * loss_adv_  + 0.5 * loss_seg_  # 二者的loss都要考虑,常见写法是完整的segloss加上部分的advloss(防止advloss过大导致segloss无法优化)
-            print("loss_adv_", loss_adv_.item())
-            print("loss_seg_", loss_seg_.item())
 
             g_loss.backward()
             optim_G.step()
 
+            print("loss_adv_", loss_adv_.item())
+            print("loss_seg_", loss_seg_.item())
+            
 
             # update discriminator
 
@@ -156,7 +158,7 @@ dataset = SegmentationDataset(args.image_dir, args.mask_dir)
 
 dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
-# generator = Generator().cuda()  # input channel = 1
+generator = Generator().cuda()  # input channel = 1
 # generator = monai.networks.nets.AttentionUnet(
 #     spatial_dims=2,
 #     in_channels=1,
@@ -165,14 +167,14 @@ dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 #     strides=(2, 2, 2, 2),  
 #     kernel_size=3,
 # ).to(device)  
-generator = monai.networks.nets.AttentionUnet(
-    spatial_dims=2,
-    in_channels=1,
-    out_channels=1,
-    channels=(32, 64, 128, 256, 512),
-    strides=(2, 2, 2, 2),  
-    kernel_size=3,
-).to(device)  
+# generator = monai.networks.nets.AttentionUnet(
+#     spatial_dims=2,
+#     in_channels=1,
+#     out_channels=1,
+#     channels=(32, 64, 128, 256, 512),
+#     strides=(2, 2, 2, 2),  
+#     kernel_size=3,
+# ).to(device)  
 
 
 discriminator = Discriminator().cuda() 
