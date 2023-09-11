@@ -19,6 +19,7 @@ import torchvision
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from torch.utils.tensorboard import SummaryWriter
+from torchmetrics.functional import dice_score
 
 from util.read_data import SegmentationDataset
 
@@ -26,20 +27,30 @@ import monai
 
 from model.Generator import Generator 
 from model.Discriminator import Discriminator
-
+from monai.transforms import (
+    Activations,
+    AsDiscrete,
+    Compose,
+    ScaleIntensity,
+    Resize,
+    AddChannel,
+)
+import numpy as np
 from sklearn.model_selection import train_test_split
 
+# def dice(pred_mask, gt_mask, k = 1):
+#     intersection = np.sum(pred_mask[gt_mask==k]) * 2.0
+#     dice = intersection / (np.sum(pred_mask) + np.sum(gt_mask))
+#     return dice
+tf = Compose([AsDiscrete(threshold=0.5)])
 
-
-
-def train_loops(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, device):
+def train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, device):
     writer = SummaryWriter() 
     batch_num = 0 
 
     for epoch in range(args.epoch):
 
-        for i_batch, sample_batched in enumerate(dataloader):  # i_batch: steps
-            
+        for i_batch, sample_batched in enumerate(dataloader_train):  # i_batch: steps
             
 
             batch_num += 1 
@@ -49,11 +60,12 @@ def train_loops(args, dataloader, generator, discriminator, optim_G, optim_D, lo
             valid = Variable(torch.cuda.FloatTensor(mask.size(0), 1).fill_(1.0), requires_grad=False)  # for discriminator 1为真   
             fake = Variable(torch.cuda.FloatTensor(img.size(0), 1).fill_(0.0), requires_grad=False) # for discriminator 0为假
 
-            valid = valid.to(device) 
-            fake = fake.to(device) 
+            # valid = valid.to(device) 
+            # fake = fake.to(device) 
 
             mask = mask.to(device).float()
             img = img.to(device) 
+            # mask = mask.float()
 
             generator.train()  # recover to train mode(because of eval in validation)
             discriminator.train()  # recover to train mode
@@ -63,7 +75,8 @@ def train_loops(args, dataloader, generator, discriminator, optim_G, optim_D, lo
             # -----------------
             optim_G.zero_grad()
 
-            g_output = generator(img)  
+            g_output = generator(img) 
+            # g_output = tf(g_output)  #
 
             # Loss measures generator's ability to fool the discriminator
             loss_adv_ = loss_adv(discriminator(g_output), valid)
@@ -93,21 +106,21 @@ def train_loops(args, dataloader, generator, discriminator, optim_G, optim_D, lo
 
             print(
                 "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
-                % (epoch, args.epoch, i_batch, len(dataloader), d_loss.item(), g_loss.item())
+                % (epoch, args.epoch, i_batch, len(dataloader_train), d_loss.item(), g_loss.item())
             )
 
 
             # tensorboard log
-            writer.add_scalar('D_loss', d_loss.item(), epoch * len(dataloader) + i_batch)
-            writer.add_scalar('G_loss', g_loss.item(), epoch * len(dataloader) + i_batch)
+            writer.add_scalar('D_loss', d_loss.item(), epoch * len(dataloader_train) + i_batch)
+            writer.add_scalar('G_loss', g_loss.item(), epoch * len(dataloader_train) + i_batch)
 
             if batch_num % 150 == 0:
                 img_grid = torchvision.utils.make_grid(img, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
-                writer.add_images('input', img_grid, epoch * len(dataloader) + i_batch, dataformats='CHW')
+                writer.add_images('input', img_grid, epoch * len(dataloader_train) + i_batch, dataformats='CHW')
                 mask_grid = torchvision.utils.make_grid(mask, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
-                writer.add_images('mask', mask_grid, epoch * len(dataloader) + i_batch, dataformats='CHW')
+                writer.add_images('mask', mask_grid, epoch * len(dataloader_train) + i_batch, dataformats='CHW')
                 g_output_grid = torchvision.utils.make_grid(g_output, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
-                writer.add_images('output', g_output_grid, epoch * len(dataloader) + i_batch, dataformats='CHW')
+                writer.add_images('output', g_output_grid, epoch * len(dataloader_train) + i_batch, dataformats='CHW')
 
 
             # current model save
@@ -119,8 +132,31 @@ def train_loops(args, dataloader, generator, discriminator, optim_G, optim_D, lo
 
             # validation of generator
             if batch_num % (args.val_batch) == 0:
+
                 generator.eval()
-                discriminator.eval()
+                # discriminator.eval()
+                val_scores = []    
+                with torch.no_grad():
+                    for i_batch_val, sample_batched in enumerate(dataloader_val):  # i_batch: steps
+                        
+                        img, mask = sample_batched['image'], sample_batched['mask']
+                        mask = mask.to(device).float() # ([8, 1, 512, 512])
+                        img = img.to(device) 
+
+                        g_output = generator(img) # ([8, 1, 512, 512])
+                        # g_output = tf(g_output)  #
+
+                        loss_dice = loss_seg(g_output, mask) #
+                        dice_cof = 1 - loss_dice.item()
+                        
+                        val_scores.append(dice_cof)
+
+                print("val_scores", val_scores)
+                metric = np.mean(val_scores)
+                print("mean dice score: ", metric)
+
+                writer.add_scalar("val_mean_dice", metric, epoch * len(dataloader_train) + i_batch)
+            
 
 
 
@@ -143,11 +179,11 @@ parser.add_argument('--b1', type=float, default=0.5, help='adam: decay of first 
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
 parser.add_argument("--epoch", type=int, default=500, help="epoch in training")
 
-parser.add_argument("--val_batch", type=int, default=500, help="Every val_batch, do validation")
+parser.add_argument("--val_batch", type=int, default=200, help="Every val_batch, do validation")
 parser.add_argument("--save_batch", type=int, default=500, help="Every val_batch, do saving model")
 
-parser.add_argument("--lambda_adv", type=float, default=3e-1, help="adversarial loss weight")
-parser.add_argument("--lambda_seg", type=float, default=2e-1, help="segmentation loss weight")
+parser.add_argument("--lambda_adv", type=float, default=4e-1, help="adversarial loss weight")
+parser.add_argument("--lambda_seg", type=float, default=3e-1, help="segmentation loss weight")
 
 args = parser.parse_args()
 print('args', args)
@@ -157,10 +193,16 @@ os.makedirs('./save_model/save_D_update', exist_ok=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
+
 dataset = SegmentationDataset(args.image_dir, args.mask_dir) 
+length =  dataset.num_of_samples()
+train_size, validate_size=int(0.8 * length),int(0.2 * length)
+train_set, validate_set=torch.utils.data.random_split(dataset,[train_size,validate_size])
 
-
-dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+dataloader_train = DataLoader(train_set, batch_size=args.batch_size, shuffle=False, pin_memory=torch.cuda.is_available())
+dataloader_val = DataLoader(validate_set, batch_size=args.batch_size, shuffle=False, pin_memory=torch.cuda.is_available())
+# dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, pin_memory=torch.cuda.is_available())
 
 generator = Generator().to(device)   # input channel must be 1
 discriminator = Discriminator().to(device) 
@@ -180,4 +222,4 @@ loss_seg = monai.losses.DiceLoss(sigmoid=True).to(device)   # DICE loss, sigmoid
 
 
 # start training loop
-train_loops(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, device=device)
+train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, device=device)
