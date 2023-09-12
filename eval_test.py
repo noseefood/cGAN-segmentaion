@@ -1,4 +1,6 @@
-from model.Generator_original import Generator
+from model.Generator_original import Generator as Generator_original # original UAGAN
+from model.Generator import Generator # New structure
+
 import os
 import sys
 from glob import glob
@@ -39,9 +41,56 @@ def calculate_iou(gt_mask, pred_mask, cls=255):
 
     return iou
 
+class NetworkInference_GANVer2():
+    '''
+    updated generator, princile is the same as UAGAN(similar to Unet+double attention)
+    '''
+    def __init__(self, mode = "pork"):
 
+        dir_checkpoint_GAN = '/home/xuesong/CAMP/segment/cGAN-segmentaion/save_model/trained_model/12.09.12.Ver1/generator_40000.pth'
+        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.generator = Generator().to(self.device)  # input channel = 1
+        self.generator.load_state_dict(torch.load(dir_checkpoint_GAN))
+        self.generator.eval() # eval mode
+
+        self.train_imtrans = Compose( # 预处理
+            [   
+                AddChannel(),  # 增加维度
+                Resize((512, 512)), # 必须要加入这个，否则会报错，这里相当于直接拉伸，跟training保持一致
+                ScaleIntensity(), # 归一化 0-255 -> 0-1
+            ]
+        )
+        # self.post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])  # 这里不需要sigmoid，因为网络中已经有了sigmoid
+        self.tf = Compose([Resize((657, 671)), AsDiscrete(threshold=0.5)])  # 先拉伸到原来的大小, 别忘了asdiscrete二值化
+
+    def inference(self, img, tf = None):
+        
+        with torch.no_grad():
+            
+            # TODO:检测输入图片的通道数，如果是3通道，需要转换为1通道
+
+            img = self.train_imtrans(img) # compose会自动返回tensor torch.Size([1, 512, 512])
+
+            img = img.to(self.device) # torch.Size([1, 512, 512])   HWC to CHW：img_trans = img_nd.transpose((2, 0, 1))
+            img = img.unsqueeze(0) # torch.Size([1, 1, 512, 512]) unsqueeze扩增维度
+
+            output = self.generator(img)
+
+            probs = output.squeeze(0) # squeeze压缩维度 torch.Size([1, 512, 512])
+
+            if tf is not None:
+                self.tf = tf
+
+            probs = self.tf(probs.cpu()) # 重新拉伸到原来的大小
+            full_mask = probs.squeeze().cpu().numpy() # return in cpu  # 
+            # cv2.imshow("full_mask", full_mask)
+            
+            return full_mask
 
 class NetworkInference_GanPlusAttUnet():
+    '''Attention Unet training using combined loss between adversial loss and segmentation loss'''
     def __init__(self):
         monai.config.print_config()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -179,14 +228,16 @@ class NetworkInference_Unet():
 
 
 class NetworkInference_GAN():
-    
+    '''
+    original generator from UAGAN
+    '''
     def __init__(self, mode = "pork"):
 
         dir_checkpoint_GAN = '/home/xuesong/CAMP/segment/cGAN-segmentaion/data/models/05.08/runs/generator_26500.pth'
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.generator = Generator().to(self.device)  # input channel = 1
+        self.generator = Generator_original().to(self.device)  # input channel = 1
         # self.generator.load_state_dict(torch.load(dir_checkpoint + "UAGAN_generator.pth"))
         self.generator.load_state_dict(torch.load(dir_checkpoint_GAN))
         self.generator.eval() # eval mode
@@ -194,7 +245,7 @@ class NetworkInference_GAN():
         self.train_imtrans = Compose( # 预处理
             [   
                 AddChannel(),  # 增加维度
-                Resize((480, 480)), # 必须要加入这个，否则会报错，这里相当于直接拉伸，跟training保持一致
+                Resize((480, 480)), # 必须要加入这个，否则会报错，这里相当于直接拉伸，跟training保持一致(注意这里之前训练的时候是resize到480,后来都改成512了)
                 ScaleIntensity(), # 归一化 0-255 -> 0-1
             ]
         )
@@ -237,6 +288,7 @@ class Evaluation():
 
         self.dataPath = '/home/xuesong/CAMP/dataset/datasetTest_080823/test_dataset/' + mode
         self.net_GAN = NetworkInference_GAN("pork")
+        # self.net_GAN = NetworkInference_GANVer2("pork")
         self.net_Unet = NetworkInference_Unet("pork", method = "Unet")  # "Unet" or "AttentionUnet" for comparison
         self.net_AttUnet = NetworkInference_Unet("pork", method = "AttentionUnet")  # "Unet" or "AttentionUnet" for comparison
         self.net_GANPlusAttUnet = NetworkInference_GanPlusAttUnet()

@@ -34,7 +34,7 @@ class SegmentationDataset(object):
                     A.GaussNoise(p=0.2),
                     A.CLAHE(p=0.2), # Contrast Limited Adaptive Histogram Equalization
                     A.GaussianBlur(p=0.2),
-                    A.PiecewiseAffine(p=0.2, scale=(0.03, 0.04), nb_rows=(4, 4), nb_cols=(4, 4)),  # new feature
+                    # A.PiecewiseAffine(p=0.2, scale=(0.03, 0.04), nb_rows=(4, 4), nb_cols=(4, 4)),  # new feature colab not support...
                 ])
 
     def __len__(self):
