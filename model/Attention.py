@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 
 '''
-Code Reference: https://github.com/luuuyi/CBAM.PyTorch/blob/master/model/resnet_cbam.py
+Code Reference: 
+    https://github.com/luuuyi/CBAM.PyTorch/blob/master/model/resnet_cbam.py
+    https://arxiv.org/pdf/2004.03696.pdf
 Specialization: in Attebtion Module, using nn.ReLU instead of nn.LeakyReLU!!!, because the expected ouput should be in [0, 1] range.
 '''
 

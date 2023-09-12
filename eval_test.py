@@ -1,4 +1,4 @@
-from model.Generator import Generator
+from model.Generator_original import Generator
 import os
 import sys
 from glob import glob
@@ -412,6 +412,6 @@ class Evaluation():
         
 
 if __name__ == "__main__":
-    test_mode = "3" # 1/2 compounding 3/4 insertion
+    test_mode = "2" # 1/2 compounding 3/4 insertion
     eval = Evaluation(mode = test_mode)
     eval.start()

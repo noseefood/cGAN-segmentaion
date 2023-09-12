@@ -171,7 +171,7 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
 parser = argparse.ArgumentParser()
 parser.add_argument('--image_dir', type=str, default='./data/imgs', help='input RGB or Gray image path')
 parser.add_argument('--mask_dir', type=str, default='./data/masks', help='input mask path')
-parser.add_argument('--lrG', type=float, default='1e-4', help='learning rate')
+parser.add_argument('--lrG', type=float, default='2e-4', help='learning rate')
 parser.add_argument('--lrD', type=float, default='5e-5', help='learning rate')
 parser.add_argument('--optimizer', type=str, default='Adam', help='RMSprop or Adam')
 parser.add_argument('--batch_size', type=int, default='8', help='batch_size in training')
@@ -179,11 +179,11 @@ parser.add_argument('--b1', type=float, default=0.5, help='adam: decay of first 
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
 parser.add_argument("--epoch", type=int, default=500, help="epoch in training")
 
-parser.add_argument("--val_batch", type=int, default=5, help="Every val_batch, do validation")
+parser.add_argument("--val_batch", type=int, default=200, help="Every val_batch, do validation")
 parser.add_argument("--save_batch", type=int, default=500, help="Every val_batch, do saving model")
 
-parser.add_argument("--lambda_adv", type=float, default=7e-1, help="adversarial loss weight")
-parser.add_argument("--lambda_seg", type=float, default=3e-1, help="segmentation loss weight")
+parser.add_argument("--lambda_adv", type=float, default=0.2, help="adversarial loss weight")
+parser.add_argument("--lambda_seg", type=float, default=1, help="segmentation loss weight")
 
 args = parser.parse_args()
 print('args', args)
@@ -217,10 +217,11 @@ else:
 
 # define loss
 loss_adv = torch.nn.BCELoss().to(device) # GAN adverserial loss
-loss_seg = torch.nn.MSELoss().to(device) # 基本的分割loss
-metric_val = monai.metrics.DiceHelper(sigmoid=True) # DICE score for validation of generator 最终输出的时候也应该经过sigmoid函数
+# loss_seg = torch.nn.MSELoss().to(device) # 基本的分割loss
+metric_val = monai.metrics.DiceHelper(sigmoid=True) # DICE score for validation of generator 最终输出的时候也应该经过sigmoid函数!!!!!!!!!!!!!!!!!!!!!!
 # loss_seg = monai.losses.DiceLoss(sigmoid=True).to(device)   # DICE loss, sigmoid参数会让输出的值最后经过sigmoid函数,(input,target)
-# loss_seg = torch.nn.BCEWithLogitsLoss().cuda()
+# loss_seg = torch.nn.BCEWithLogitsLoss().cuda() # BECWithLogitsLoss即是把最后的sigmoid和BCELoss合成一步，效果是一样的
+loss_seg =  monai.losses.FocalLoss().to(device) # FocalLoss is an extension of BCEWithLogitsLoss, so sigmoid is not needed.
 
 
 # start training loop

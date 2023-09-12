@@ -20,11 +20,21 @@ class SegmentationDataset(object):
             self.masks.append(mask_file)
 
         # augmentation
+        # self.transform = A.Compose([
+        #             A.HorizontalFlip(p=0.3),
+        #             A.VerticalFlip(p=0.3),
+        #             A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.3),
+        #             A.GaussNoise(p=0.2),
+        #         ])
+        
         self.transform = A.Compose([
                     A.HorizontalFlip(p=0.3),
                     A.VerticalFlip(p=0.3),
                     A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.3),
                     A.GaussNoise(p=0.2),
+                    A.CLAHE(p=0.2), # Contrast Limited Adaptive Histogram Equalization
+                    A.GaussianBlur(p=0.2),
+                    A.PiecewiseAffine(p=0.2, scale=(0.03, 0.04), nb_rows=(4, 4), nb_cols=(4, 4)),  # new feature
                 ])
 
     def __len__(self):
