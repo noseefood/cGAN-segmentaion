@@ -19,7 +19,7 @@ import torchvision
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from torch.utils.tensorboard import SummaryWriter
-from torchmetrics.functional import dice_score
+# from torchmetrics.functional import dice_score
 
 from util.read_data import SegmentationDataset
 
@@ -44,7 +44,7 @@ from sklearn.model_selection import train_test_split
 #     return dice
 tf = Compose([AsDiscrete(threshold=0.5)])
 
-def train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, device):
+def train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, metric_val, device):
     writer = SummaryWriter() 
     batch_num = 0 
 
@@ -145,11 +145,11 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
 
                         g_output = generator(img) # ([8, 1, 512, 512])
                         # g_output = tf(g_output)  #
-
-                        loss_dice = loss_seg(g_output, mask) #
-                        dice_cof = 1 - loss_dice.item()
+                        dice_cof, _ = metric_val(y_pred=g_output, y=mask)
+                        # loss_dice = loss_seg(g_output, mask) #
+                        # dice_cof = 1 - loss_dice.item()
                         
-                        val_scores.append(dice_cof)
+                        val_scores.append(dice_cof.cpu().numpy())
 
                 print("val_scores", val_scores)
                 metric = np.mean(val_scores)
@@ -173,16 +173,16 @@ parser.add_argument('--image_dir', type=str, default='./data/imgs', help='input 
 parser.add_argument('--mask_dir', type=str, default='./data/masks', help='input mask path')
 parser.add_argument('--lrG', type=float, default='1e-4', help='learning rate')
 parser.add_argument('--lrD', type=float, default='5e-5', help='learning rate')
-parser.add_argument('--RMSprop', type=str, default='Adam', help='RMSprop or Adam')
+parser.add_argument('--optimizer', type=str, default='Adam', help='RMSprop or Adam')
 parser.add_argument('--batch_size', type=int, default='8', help='batch_size in training')
 parser.add_argument('--b1', type=float, default=0.5, help='adam: decay of first order momentum of gradient')
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
 parser.add_argument("--epoch", type=int, default=500, help="epoch in training")
 
-parser.add_argument("--val_batch", type=int, default=200, help="Every val_batch, do validation")
+parser.add_argument("--val_batch", type=int, default=5, help="Every val_batch, do validation")
 parser.add_argument("--save_batch", type=int, default=500, help="Every val_batch, do saving model")
 
-parser.add_argument("--lambda_adv", type=float, default=4e-1, help="adversarial loss weight")
+parser.add_argument("--lambda_adv", type=float, default=7e-1, help="adversarial loss weight")
 parser.add_argument("--lambda_seg", type=float, default=3e-1, help="segmentation loss weight")
 
 args = parser.parse_args()
@@ -193,8 +193,7 @@ os.makedirs('./save_model/save_D_update', exist_ok=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-
+# define dataset
 dataset = SegmentationDataset(args.image_dir, args.mask_dir) 
 length =  dataset.num_of_samples()
 train_size, validate_size=int(0.8 * length),int(0.2 * length)
@@ -209,7 +208,7 @@ discriminator = Discriminator().to(device)
 
 # define optimizer
 
-if args.RMSprop == "RMSprop":
+if args.optimizer == "RMSprop":
     optim_D = torch.optim.RMSprop(discriminator.parameters(), lr = args.lrD)
     optim_G = torch.optim.RMSprop(generator.parameters(), lr = args.lrG)
 else: 
@@ -217,11 +216,12 @@ else:
     optim_D = torch.optim.Adam(discriminator.parameters(), lr=args.lrD, betas=(args.b1, args.b2))
 
 # define loss
-loss_adv = torch.nn.BCELoss().to(device) # 二分类交叉熵 特别针对于GAN adverserial loss
-# loss_seg = torch.nn.MSELoss().cuda() # 基本的分割loss
-loss_seg = monai.losses.DiceLoss(sigmoid=True).to(device)   # DICE loss, sigmoid参数会让输出的值最后经过sigmoid函数,(input,target)
+loss_adv = torch.nn.BCELoss().to(device) # GAN adverserial loss
+loss_seg = torch.nn.MSELoss().to(device) # 基本的分割loss
+metric_val = monai.metrics.DiceHelper(sigmoid=True) # DICE score for validation of generator 最终输出的时候也应该经过sigmoid函数
+# loss_seg = monai.losses.DiceLoss(sigmoid=True).to(device)   # DICE loss, sigmoid参数会让输出的值最后经过sigmoid函数,(input,target)
 # loss_seg = torch.nn.BCEWithLogitsLoss().cuda()
 
 
 # start training loop
-train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, device=device)
+train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, metric_val, device=device)
