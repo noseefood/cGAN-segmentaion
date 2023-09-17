@@ -38,18 +38,15 @@ from monai.transforms import (
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-gamma_max = 0.05
+# gamma_max = 0.05
 torch.manual_seed(777)
-# def dice(pred_mask, gt_mask, k = 1):
-#     intersection = np.sum(pred_mask[gt_mask==k]) * 2.0
-#     dice = intersection / (np.sum(pred_mask) + np.sum(gt_mask))
-#     return dice
-tf = Compose([AsDiscrete(threshold=0.5)])
+if_adersial = False
+# tf = Compose([AsDiscrete(threshold=0.5)])
 
 def train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, metric_val, device):
     writer = SummaryWriter() 
     batch_num = 0 
-    gamma = 0
+    # gamma = 0
     for epoch in range(args.epoch):
 
         for i_batch, sample_batched in enumerate(dataloader_train):  # i_batch: steps
@@ -85,7 +82,8 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
 
             # Loss measures generator's ability to generate seg mask
             loss_seg_ = loss_seg(g_output, mask) # 
-            g_loss = args.lambda_adv * loss_adv_ * gamma  + args.lambda_seg * loss_seg_  
+            # g_loss = args.lambda_adv * loss_adv_ * gamma  + args.lambda_seg * loss_seg_  
+            g_loss = args.lambda_adv * loss_adv_   + args.lambda_seg * loss_seg_  
 
             g_loss.backward()
             optim_G.step()
@@ -157,10 +155,10 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
 
                 writer.add_scalar("val_mean_dice", metric, epoch * len(dataloader_train) + i_batch)
                 
-            if batch_num % 1000 == 0 and gamma < gamma_max:
-                gamma += 0.01
-                print("Current gamma: ", gamma)
-                writer.add_scalar("Current gamma decay", gamma, epoch * len(dataloader_train) + i_batch)
+            # if batch_num % 1000 == 0 and gamma < gamma_max:
+            #     gamma += 0.01
+            #     print("Current gamma: ", gamma)
+            #     writer.add_scalar("Current gamma decay", gamma, epoch * len(dataloader_train) + i_batch)
             
 
 
@@ -171,7 +169,97 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
             torch.save(discriminator.state_dict(), './save_model/save_D_update/final_discriminator.pth')
 
 
+def train_loops_Generaotr(args, dataloader_train, dataloader_val, generator, optim_G, loss_seg, metric_val, device):
+    writer = SummaryWriter() 
+    batch_num = 0 
 
+    for epoch in range(args.epoch):
+
+        for i_batch, sample_batched in enumerate(dataloader_train):  # i_batch: steps
+            
+            batch_num += 1 
+            
+            # load data
+            img, mask = sample_batched['image'], sample_batched['mask']
+
+            mask = mask.to(device).float()
+            img = img.to(device) 
+
+            generator.train()  # recover to train mode(because of eval in validation)
+
+            # -----------------
+            #  Train Generator
+            # -----------------
+            optim_G.zero_grad()
+
+            g_output = generator(img) 
+            # g_output = tf(g_output)  
+
+            # Loss measures generator's ability to generate seg mask
+            loss_seg_ = loss_seg(g_output, mask) # 
+            # g_loss = args.lambda_adv * loss_adv_ * gamma  + args.lambda_seg * loss_seg_  
+            g_loss = loss_seg_  
+
+            g_loss.backward()
+            optim_G.step()
+
+            print("loss_seg_", loss_seg_.item())
+
+
+            print(
+                "[Epoch %d/%d] [Batch %d/%d] [G loss: %f]"
+                % (epoch, args.epoch, i_batch, len(dataloader_train), g_loss.item())
+            )
+
+
+            # tensorboard 
+            writer.add_scalar('G_loss', g_loss.item(), epoch * len(dataloader_train) + i_batch)
+
+            if batch_num % 150 == 0:
+                img_grid = torchvision.utils.make_grid(img, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
+                writer.add_images('input', img_grid, epoch * len(dataloader_train) + i_batch, dataformats='CHW')
+                mask_grid = torchvision.utils.make_grid(mask, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
+                writer.add_images('mask', mask_grid, epoch * len(dataloader_train) + i_batch, dataformats='CHW')
+                g_output_grid = torchvision.utils.make_grid(g_output, nrow=3, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
+                writer.add_images('output', g_output_grid, epoch * len(dataloader_train) + i_batch, dataformats='CHW')
+
+
+            # current model save
+            if batch_num % (args.save_batch) == 0:
+
+                torch.save(generator.state_dict(), './save_model/save_G_Only/generator_'+ str(batch_num) +'.pth')
+                print("saved current metric model in ", batch_num)
+
+            # validation of generator
+            if batch_num % (args.val_batch) == 0:
+
+                generator.eval()
+                val_scores = []    
+                with torch.no_grad():
+                    for i_batch_val, sample_batched in enumerate(dataloader_val):  # i_batch: steps
+                        
+                        img, mask = sample_batched['image'], sample_batched['mask']
+                        mask = mask.to(device).float() # ([8, 1, 512, 512])
+                        img = img.to(device) 
+
+                        g_output = generator(img) # ([8, 1, 512, 512])
+                        # g_output = tf(g_output)  #
+                        dice_cof, _ = metric_val(y_pred=g_output, y=mask)
+                        
+                        val_scores.append(dice_cof.cpu().numpy())
+
+                print("val_scores", val_scores)
+                metric = np.mean(val_scores)
+                print("mean dice score: ", metric)
+
+                writer.add_scalar("val_mean_dice", metric, epoch * len(dataloader_train) + i_batch)
+                    
+
+
+        # final model save
+        if epoch == args.epoch - 1:
+            print("final model saved")
+            torch.save(generator.state_dict(), './save_model/save_G_Only/final_generator.pth')
 
 
 parser = argparse.ArgumentParser()
@@ -188,7 +276,7 @@ parser.add_argument("--epoch", type=int, default=500, help="epoch in training")
 parser.add_argument("--val_batch", type=int, default=200, help="Every val_batch, do validation")
 parser.add_argument("--save_batch", type=int, default=500, help="Every val_batch, do saving model")
 
-parser.add_argument("--lambda_adv", type=float, default=1, help="adversarial loss weight")
+parser.add_argument("--lambda_adv", type=float, default=0.2, help="adversarial loss weight")
 parser.add_argument("--lambda_seg", type=float, default=1, help="segmentation loss weight")
 
 args = parser.parse_args()
@@ -234,4 +322,7 @@ loss_seg = monai.losses.DiceLoss(sigmoid=True).to(device)   # DICE loss, sigmoid
 
 
 # start training loop
-train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, metric_val, device=device)
+if if_adersial:
+    train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, metric_val, device=device)
+else:
+    train_loops_Generaotr(args, dataloader_train, dataloader_val, generator, optim_G, loss_seg, metric_val, device=device)

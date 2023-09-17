@@ -464,6 +464,6 @@ class Evaluation():
         
 
 if __name__ == "__main__":
-    test_mode = "1" # 1/2 compounding 3/4 insertion
+    test_mode = "4" # 1/2 compounding 3/4 insertion
     eval = Evaluation(mode = test_mode)
     eval.start()
