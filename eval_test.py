@@ -47,7 +47,7 @@ class NetworkInference_GANVer2():
     '''
     def __init__(self, mode = "pork"):
 
-        dir_checkpoint_GAN = '/home/xuesong/CAMP/segment/cGAN-segmentaion/save_model/trained_model/12.09.12.Ver1/generator_40000.pth'
+        dir_checkpoint_GAN = '/home/xuesong/generator_9000.pth'
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -287,8 +287,8 @@ class Evaluation():
     def __init__(self, mode = "1"):
 
         self.dataPath = '/home/xuesong/CAMP/dataset/datasetTest_080823/test_dataset/' + mode
-        self.net_GAN = NetworkInference_GAN("pork")
-        # self.net_GAN = NetworkInference_GANVer2("pork")
+        # self.net_GAN = NetworkInference_GAN("pork")
+        self.net_GAN = NetworkInference_GANVer2("pork")
         self.net_Unet = NetworkInference_Unet("pork", method = "Unet")  # "Unet" or "AttentionUnet" for comparison
         self.net_AttUnet = NetworkInference_Unet("pork", method = "AttentionUnet")  # "Unet" or "AttentionUnet" for comparison
         self.net_GANPlusAttUnet = NetworkInference_GanPlusAttUnet()
@@ -464,6 +464,6 @@ class Evaluation():
         
 
 if __name__ == "__main__":
-    test_mode = "2" # 1/2 compounding 3/4 insertion
+    test_mode = "1" # 1/2 compounding 3/4 insertion
     eval = Evaluation(mode = test_mode)
     eval.start()

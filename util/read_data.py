@@ -2,10 +2,12 @@ import os
 import cv2 as cv
 import torch
 import numpy as np
+import random
 
 # TODO: add transform
 import albumentations as A  # Augmentation library
 
+random.seed(777)
 
 class SegmentationDataset(object):
     def __init__(self, image_dir, mask_dir):

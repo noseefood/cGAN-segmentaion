@@ -38,6 +38,8 @@ from monai.transforms import (
 import numpy as np
 from sklearn.model_selection import train_test_split
 
+gamma_max = 0.05
+torch.manual_seed(777)
 # def dice(pred_mask, gt_mask, k = 1):
 #     intersection = np.sum(pred_mask[gt_mask==k]) * 2.0
 #     dice = intersection / (np.sum(pred_mask) + np.sum(gt_mask))
@@ -47,7 +49,7 @@ tf = Compose([AsDiscrete(threshold=0.5)])
 def train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, metric_val, device):
     writer = SummaryWriter() 
     batch_num = 0 
-
+    gamma = 0
     for epoch in range(args.epoch):
 
         for i_batch, sample_batched in enumerate(dataloader_train):  # i_batch: steps
@@ -83,7 +85,7 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
 
             # Loss measures generator's ability to generate seg mask
             loss_seg_ = loss_seg(g_output, mask) # 
-            g_loss = args.lambda_adv * loss_adv_  + args.lambda_seg * loss_seg_  
+            g_loss = args.lambda_adv * loss_adv_ * gamma  + args.lambda_seg * loss_seg_  
 
             g_loss.backward()
             optim_G.step()
@@ -146,8 +148,6 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
                         g_output = generator(img) # ([8, 1, 512, 512])
                         # g_output = tf(g_output)  #
                         dice_cof, _ = metric_val(y_pred=g_output, y=mask)
-                        # loss_dice = loss_seg(g_output, mask) #
-                        # dice_cof = 1 - loss_dice.item()
                         
                         val_scores.append(dice_cof.cpu().numpy())
 
@@ -156,13 +156,19 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
                 print("mean dice score: ", metric)
 
                 writer.add_scalar("val_mean_dice", metric, epoch * len(dataloader_train) + i_batch)
+                
+            if batch_num % 1000 == 0 and gamma < gamma_max:
+                gamma += 0.01
+                print("Current gamma: ", gamma)
+                writer.add_scalar("Current gamma decay", gamma, epoch * len(dataloader_train) + i_batch)
             
 
 
-
         # final model save
-        torch.save(generator.state_dict(), './save_model/save_G_update/final_generator.pth')
-        torch.save(discriminator.state_dict(), './save_model/save_D_update/final_discriminator.pth')
+        if epoch == args.epoch - 1:
+            print("final model saved")
+            torch.save(generator.state_dict(), './save_model/save_G_update/final_generator.pth')
+            torch.save(discriminator.state_dict(), './save_model/save_D_update/final_discriminator.pth')
 
 
 
@@ -173,7 +179,7 @@ parser.add_argument('--image_dir', type=str, default='./data/imgs', help='input 
 parser.add_argument('--mask_dir', type=str, default='./data/masks', help='input mask path')
 parser.add_argument('--lrG', type=float, default='2e-4', help='learning rate')
 parser.add_argument('--lrD', type=float, default='5e-5', help='learning rate')
-parser.add_argument('--optimizer', type=str, default='Adam', help='RMSprop or Adam')
+parser.add_argument('--optimizer', type=str, default='SGD', help='RMSprop or Adam')
 parser.add_argument('--batch_size', type=int, default='8', help='batch_size in training')
 parser.add_argument('--b1', type=float, default=0.5, help='adam: decay of first order momentum of gradient')
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
@@ -182,7 +188,7 @@ parser.add_argument("--epoch", type=int, default=500, help="epoch in training")
 parser.add_argument("--val_batch", type=int, default=200, help="Every val_batch, do validation")
 parser.add_argument("--save_batch", type=int, default=500, help="Every val_batch, do saving model")
 
-parser.add_argument("--lambda_adv", type=float, default=0.2, help="adversarial loss weight")
+parser.add_argument("--lambda_adv", type=float, default=1, help="adversarial loss weight")
 parser.add_argument("--lambda_seg", type=float, default=1, help="segmentation loss weight")
 
 args = parser.parse_args()
@@ -211,15 +217,18 @@ discriminator = Discriminator().to(device)
 if args.optimizer == "RMSprop":
     optim_D = torch.optim.RMSprop(discriminator.parameters(), lr = args.lrD)
     optim_G = torch.optim.RMSprop(generator.parameters(), lr = args.lrG)
-else: 
+elif args.optimizer == "Adam": 
     optim_G = torch.optim.Adam(generator.parameters(), lr=args.lrG, betas=(args.b1, args.b2))
     optim_D = torch.optim.Adam(discriminator.parameters(), lr=args.lrD, betas=(args.b1, args.b2))
+elif args.optimizer == "SGD":
+    optim_G = torch.optim.SGD(generator.parameters(), lr=args.lrG, momentum=0.9)
+    optim_D = torch.optim.SGD(discriminator.parameters(), lr=args.lrD, momentum=0.9)
 
 # define loss
 loss_adv = torch.nn.BCELoss().to(device) # GAN adverserial loss
-loss_seg = torch.nn.MSELoss().to(device) # 基本的分割loss
+# loss_seg = torch.nn.MSELoss().to(device) # 基本的分割loss
 metric_val = monai.metrics.DiceHelper(sigmoid=True) # DICE score for validation of generator 最终输出的时候也应该经过sigmoid函数!!!!!!!!!!!!!!!!!!!!!!
-# loss_seg = monai.losses.DiceLoss(sigmoid=True).to(device)   # DICE loss, sigmoid参数会让输出的值最后经过sigmoid函数,(input,target)
+loss_seg = monai.losses.DiceLoss(sigmoid=True).to(device)   # DICE loss, sigmoid参数会让输出的值最后经过sigmoid函数,(input,target)
 # loss_seg = torch.nn.BCEWithLogitsLoss().cuda() # BECWithLogitsLoss即是把最后的sigmoid和BCELoss合成一步，效果是一样的
 # loss_seg =  monai.losses.FocalLoss().to(device) # FocalLoss is an extension of BCEWithLogitsLoss, so sigmoid is not needed.
 
