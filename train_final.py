@@ -319,9 +319,9 @@ elif args.optimizer == "SGD":
 
 # define loss
 loss_adv = torch.nn.BCELoss().to(device) # GAN adverserial loss
-# loss_seg = torch.nn.MSELoss().to(device) # 基本的分割loss
+loss_seg = torch.nn.MSELoss().to(device) # 基本的分割loss
 metric_val = monai.metrics.DiceHelper(sigmoid=True) # DICE score for validation of generator 最终输出的时候也应该经过sigmoid函数!!!!!!!!!!!!!!!!!!!!!!
-loss_seg = monai.losses.DiceLoss(sigmoid=True).to(device)   # DICE loss, sigmoid参数会让输出的值最后经过sigmoid函数,(input,target)
+# loss_seg = monai.losses.DiceLoss(sigmoid=True).to(device)   # DICE loss, sigmoid参数会让输出的值最后经过sigmoid函数,(input,target)
 # loss_seg = torch.nn.BCEWithLogitsLoss().cuda() # BECWithLogitsLoss即是把最后的sigmoid和BCELoss合成一步，效果是一样的
 # loss_seg =  monai.losses.FocalLoss().to(device) # FocalLoss is an extension of BCEWithLogitsLoss, so sigmoid is not needed.
 
