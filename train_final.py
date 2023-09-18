@@ -170,6 +170,9 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
 
 
 def train_loops_Generaotr(args, dataloader_train, dataloader_val, generator, optim_G, loss_seg, metric_val, device):
+    '''
+    only train generator, no discriminator, equivalent to commonly segmentation training
+    '''
     writer = SummaryWriter() 
     batch_num = 0 
 
