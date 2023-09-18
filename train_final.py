@@ -269,7 +269,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--image_dir', type=str, default='./data/imgs', help='input RGB or Gray image path')
 parser.add_argument('--mask_dir', type=str, default='./data/masks', help='input mask path')
 parser.add_argument('--lrG', type=float, default='2e-4', help='learning rate')
-parser.add_argument('--lrD', type=float, default='5e-5', help='learning rate')
+parser.add_argument('--lrD', type=float, default='1e-4', help='learning rate')
 parser.add_argument('--optimizer', type=str, default='SGD', help='RMSprop or Adam')
 parser.add_argument('--batch_size', type=int, default='8', help='batch_size in training')
 parser.add_argument('--b1', type=float, default=0.5, help='adam: decay of first order momentum of gradient')
@@ -279,14 +279,16 @@ parser.add_argument("--epoch", type=int, default=500, help="epoch in training")
 parser.add_argument("--val_batch", type=int, default=200, help="Every val_batch, do validation")
 parser.add_argument("--save_batch", type=int, default=500, help="Every val_batch, do saving model")
 
-parser.add_argument("--lambda_adv", type=float, default=0.2, help="adversarial loss weight")
-parser.add_argument("--lambda_seg", type=float, default=1, help="segmentation loss weight")
+parser.add_argument("--lambda_adv", type=float, default=0.5, help="adversarial loss weight")
+parser.add_argument("--lambda_seg", type=float, default=0.5, help="segmentation loss weight")
 
 args = parser.parse_args()
 print('args', args)
 
 os.makedirs('./save_model/save_G_update', exist_ok=True)
 os.makedirs('./save_model/save_D_update', exist_ok=True)
+
+os.makedirs('./save_model/save_G_Only', exist_ok=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
