@@ -40,7 +40,7 @@ from sklearn.model_selection import train_test_split
 
 # gamma_max = 0.05
 torch.manual_seed(777)
-if_adersial = False
+if_adersial = True
 # tf = Compose([AsDiscrete(threshold=0.5)])
 
 def train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, metric_val, device):
@@ -266,8 +266,14 @@ def train_loops_Generaotr(args, dataloader_train, dataloader_val, generator, opt
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--image_dir', type=str, default='./data/imgs', help='input RGB or Gray image path')
-parser.add_argument('--mask_dir', type=str, default='./data/masks', help='input mask path')
+# parser.add_argument('--image_dir', type=str, default='./data/imgs', help='input RGB or Gray image path')
+# parser.add_argument('--mask_dir', type=str, default='./data/masks', help='input mask path')
+# parser.add_argument('--image_dir', type=str, default='C:\Research\projects\Learning\dataset\Basic_pork/imgs', help='input RGB or Gray image path')
+# parser.add_argument('--mask_dir', type=str, default='C:\Research\projects\Learning\dataset\Basic_pork/masks', help='input mask path')
+
+parser.add_argument('--image_dir', type=str, default='C:\Research\projects\Learning\dataset\data_training\Data_Pork/imgs', help='input RGB or Gray image path')
+parser.add_argument('--mask_dir', type=str, default='C:\Research\projects\Learning\dataset\data_training\Data_Pork/masks', help='input mask path')
+
 parser.add_argument('--lrG', type=float, default='2e-4', help='learning rate')
 parser.add_argument('--lrD', type=float, default='1e-4', help='learning rate')
 parser.add_argument('--optimizer', type=str, default='Adam', help='RMSprop or Adam')
@@ -295,8 +301,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # define dataset
 dataset = SegmentationDataset(args.image_dir, args.mask_dir) 
 length =  dataset.num_of_samples()
-train_size, validate_size=int(0.8 * length),int(0.2 * length)
-train_set, validate_set=torch.utils.data.random_split(dataset,[train_size,validate_size])
+# train_size, validate_size=int(0.8 * length),int(0.2 * length) #  for basic pork
+train_size = int(0.8 * length) #  for basic pork
+train_set, validate_set=torch.utils.data.random_split(dataset,[train_size,(length-train_size)])
 
 dataloader_train = DataLoader(train_set, batch_size=args.batch_size, shuffle=False, pin_memory=torch.cuda.is_available())
 dataloader_val = DataLoader(validate_set, batch_size=args.batch_size, shuffle=False, pin_memory=torch.cuda.is_available())
