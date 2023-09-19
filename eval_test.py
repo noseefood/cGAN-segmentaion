@@ -287,8 +287,8 @@ class Evaluation():
     def __init__(self, mode = "1"):
 
         self.dataPath = '/home/xuesong/CAMP/dataset/datasetTest_080823/test_dataset/' + mode
-        # self.net_GAN = NetworkInference_GAN("pork")
-        self.net_GAN = NetworkInference_GANVer2("pork")
+        self.net_GAN = NetworkInference_GAN("pork") # 老参数就用这个了不要改了...
+        # self.net_GAN = NetworkInference_GANVer2("pork") # 更多依赖于MSE loss的模型效果还不如原来的...
         self.net_Unet = NetworkInference_Unet("pork", method = "Unet")  # "Unet" or "AttentionUnet" for comparison
         self.net_AttUnet = NetworkInference_Unet("pork", method = "AttentionUnet")  # "Unet" or "AttentionUnet" for comparison
         self.net_GANPlusAttUnet = NetworkInference_GanPlusAttUnet()
@@ -464,6 +464,6 @@ class Evaluation():
         
 
 if __name__ == "__main__":
-    test_mode = "4" # 1/2 compounding 3/4 insertion
+    test_mode = "3" # 1/2 compounding 3/4 insertion
     eval = Evaluation(mode = test_mode)
     eval.start()
