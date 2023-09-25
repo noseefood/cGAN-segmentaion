@@ -176,6 +176,8 @@ def train_loops_Generaotr(args, dataloader_train, dataloader_val, generator, opt
     writer = SummaryWriter() 
     batch_num = 0 
 
+    best_metric = -999
+
     for epoch in range(args.epoch):
 
         for i_batch, sample_batched in enumerate(dataloader_train):  # i_batch: steps
@@ -256,6 +258,12 @@ def train_loops_Generaotr(args, dataloader_train, dataloader_val, generator, opt
                 print("mean dice score: ", metric)
 
                 writer.add_scalar("val_mean_dice", metric, epoch * len(dataloader_train) + i_batch)
+
+                # save best model
+                if metric > best_metric:
+                    best_metric = metric
+                    torch.save(generator.state_dict(), './save_model/save_G_Only/best_generator.pth')
+                    print("best model saved")
                     
 
 
@@ -276,7 +284,7 @@ parser.add_argument('--mask_dir', type=str, default='C:\Research\projects\Learni
 
 parser.add_argument('--lrG', type=float, default='2e-4', help='learning rate')
 parser.add_argument('--lrD', type=float, default='1e-4', help='learning rate')
-parser.add_argument('--optimizer', type=str, default='Adam', help='RMSprop or Adam')
+parser.add_argument('--optimizer', type=str, default='SGD', help='RMSprop or Adam')
 parser.add_argument('--batch_size', type=int, default='8', help='batch_size in training')
 parser.add_argument('--b1', type=float, default=0.5, help='adam: decay of first order momentum of gradient')
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
