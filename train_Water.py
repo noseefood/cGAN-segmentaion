@@ -86,7 +86,8 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
             # Loss measures generator's ability to generate seg mask
             loss_seg_ = loss_seg(g_output, mask) # 
             # g_loss = args.lambda_adv * loss_adv_ * gamma  + args.lambda_seg * loss_seg_  
-            g_loss = args.lambda_adv * loss_adv_   + args.lambda_seg * loss_seg_ + loss_ssim(g_output, mask)
+            # g_loss = args.lambda_adv * loss_adv_   + args.lambda_seg * loss_seg_ + loss_ssim(g_output, mask)
+            g_loss = args.lambda_adv * loss_adv_   + args.lambda_seg * loss_seg_
 
             g_loss.backward()
             optim_G.step()
@@ -130,8 +131,8 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
             # current model save
             if batch_num % (args.save_batch) == 0:
 
-                torch.save(generator.state_dict(), './save_model/save_G_update/generator_'+ str(batch_num) +'.pth')
-                torch.save(discriminator.state_dict(), './save_model/save_D_update/discriminator_'+ str(batch_num) +'.pth')
+                torch.save(generator.state_dict(), './save_model/save_G_water/generator_'+ str(batch_num) +'.pth')
+                torch.save(discriminator.state_dict(), './save_model/save_D_water/discriminator_'+ str(batch_num) +'.pth')
                 print("saved current metric model in ", batch_num)
 
             # validation of generator
@@ -169,11 +170,9 @@ def train_loops(args, dataloader_train, dataloader_val, generator, discriminator
         # final model save
         if epoch == args.epoch - 1:
             print("final model saved")
-            torch.save(generator.state_dict(), './save_model/save_G_update/final_generator.pth')
-            torch.save(discriminator.state_dict(), './save_model/save_D_update/final_discriminator.pth')
+            torch.save(generator.state_dict(), './save_model/save_G_water/final_generator.pth')
+            torch.save(discriminator.state_dict(), './save_model/save_D_water/final_discriminator.pth')
 
-
-def train_loops_Generaotr(args, dataloader_train, dataloader_val, generator, optim_G, loss_seg, metric_val, device):
     '''
     only train generator, no discriminator, equivalent to commonly segmentation training
     '''
@@ -278,15 +277,11 @@ def train_loops_Generaotr(args, dataloader_train, dataloader_val, generator, opt
 
 
 parser = argparse.ArgumentParser()
-# parser.add_argument('--image_dir', type=str, default='./data/imgs', help='input RGB or Gray image path')
-# parser.add_argument('--mask_dir', type=str, default='./data/masks', help='input mask path')
-# parser.add_argument('--image_dir', type=str, default='C:\Research\projects\Learning\dataset\Basic_pork/imgs', help='input RGB or Gray image path')
-# parser.add_argument('--mask_dir', type=str, default='C:\Research\projects\Learning\dataset\Basic_pork/masks', help='input mask path')
 
-parser.add_argument('--image_dir', type=str, default='C:\Research\projects\Learning\dataset\data_training\Data_Pork/imgs', help='input RGB or Gray image path')
-parser.add_argument('--mask_dir', type=str, default='C:\Research\projects\Learning\dataset\data_training\Data_Pork/masks', help='input mask path')
+parser.add_argument('--image_dir', type=str, default='C:\Research\projects\Learning\dataset\data_training\Data_Water/imgs', help='input RGB or Gray image path')
+parser.add_argument('--mask_dir', type=str, default='C:\Research\projects\Learning\dataset\data_training\Data_Water/masks', help='input mask path')
 
-parser.add_argument('--lrG', type=float, default='6e-4', help='learning rate')
+parser.add_argument('--lrG', type=float, default='2e-4', help='learning rate')
 parser.add_argument('--lrD', type=float, default='1e-4', help='learning rate') # 
 parser.add_argument('--optimizer', type=str, default='Adam', help='RMSprop or Adam')
 parser.add_argument('--batch_size', type=int, default='8', help='batch_size in training')
@@ -297,16 +292,16 @@ parser.add_argument("--epoch", type=int, default=500, help="epoch in training")
 parser.add_argument("--val_batch", type=int, default=200, help="Every val_batch, do validation")
 parser.add_argument("--save_batch", type=int, default=500, help="Every val_batch, do saving model")
 
-parser.add_argument("--lambda_adv", type=float, default=0.5, help="adversarial loss weight")
-parser.add_argument("--lambda_seg", type=float, default=0.5, help="segmentation loss weight")
+parser.add_argument("--lambda_adv", type=float, default=1, help="adversarial loss weight")
+parser.add_argument("--lambda_seg", type=float, default=1, help="segmentation loss weight")
 
 args = parser.parse_args()
 print('args', args)
 
-os.makedirs('./save_model/save_G_update', exist_ok=True)
-os.makedirs('./save_model/save_D_update', exist_ok=True)
+os.makedirs('./save_model/save_G_water', exist_ok=True)
+os.makedirs('./save_model/save_D_water', exist_ok=True)
 
-os.makedirs('./save_model/save_G_Only', exist_ok=True)
+os.makedirs('./save_model/save_G_Only_water', exist_ok=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
