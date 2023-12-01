@@ -4,8 +4,7 @@ import torch
 import numpy as np
 import random
 
-# TODO: add transform
-import albumentations as A  # Augmentation library
+import albumentations as A  
 
 random.seed(777)
 
@@ -22,22 +21,24 @@ class SegmentationDataset(object):
             self.masks.append(mask_file)
 
         # augmentation
+        
         # self.transform = A.Compose([
         #             A.HorizontalFlip(p=0.3),
         #             A.VerticalFlip(p=0.3),
         #             A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.3),
         #             A.GaussNoise(p=0.2),
+        #             # A.CLAHE(p=0.2), # Contrast Limited Adaptive Histogram Equalization
+        #             A.GaussianBlur(p=0.2),
+        #             # A.PiecewiseAffine(p=0.2, scale=(0.03, 0.04), nb_rows=(4, 4), nb_cols=(4, 4)),  # new feature colab not support...
+        #             # A.ShiftScaleRotate(p=0.3, shift_limit=0.0625, scale_limit=0.1, rotate_limit=20, border_mode=cv.BORDER_CONSTANT, value=0, mask_value=0),
         #         ])
-        
-        self.transform = A.Compose([
+        self.transform = A.Compose([    # water
                     A.HorizontalFlip(p=0.3),
                     A.VerticalFlip(p=0.3),
-                    A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.3),
-                    A.GaussNoise(p=0.2),
+                    A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.3),
+                    # A.GaussNoise(p=0.2),
                     # A.CLAHE(p=0.2), # Contrast Limited Adaptive Histogram Equalization
-                    A.GaussianBlur(p=0.2),
-                    # A.PiecewiseAffine(p=0.2, scale=(0.03, 0.04), nb_rows=(4, 4), nb_cols=(4, 4)),  # new feature colab not support...
-                    # A.ShiftScaleRotate(p=0.3, shift_limit=0.0625, scale_limit=0.1, rotate_limit=20, border_mode=cv.BORDER_CONSTANT, value=0, mask_value=0),
+                    # A.GaussianBlur(p=0.2),
                 ])
 
     def __len__(self):
@@ -75,13 +76,8 @@ class SegmentationDataset(object):
 
         # 输入图像 preprocessing
         img = np.float32(img) / 255.0
-        img = np.expand_dims(img, 0) # 增加通道维度  
-        # print('img.shape', img.shape)
-
-        # 目标标签0 ~ 1， 对于
-        # mask[mask <= 128] = 0
-        # mask[mask > 128] = 1
-        mask = np.expand_dims(mask, 0) # 增加通道维度
+        img = np.expand_dims(img, 0) # add channel dim from 
+        mask = np.expand_dims(mask, 0) # add channel dim
 
         sample = {'image': torch.from_numpy(img), 'mask': torch.from_numpy(mask), }
 

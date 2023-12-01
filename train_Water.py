@@ -343,5 +343,5 @@ metric_val = monai.metrics.DiceHelper(sigmoid=True) # DICE score for validation 
 # start training loop
 if if_adersial:
     train_loops(args, dataloader_train, dataloader_val, generator, discriminator, optim_G, optim_D, loss_adv, loss_seg, metric_val, device=device)
-else:
-    train_loops_Generaotr(args, dataloader_train, dataloader_val, generator, optim_G, loss_seg, metric_val, device=device)
+# else:
+#     train_loops_Generaotr(args, dataloader_train, dataloader_val, generator, optim_G, loss_seg, metric_val, device=device)
