@@ -289,6 +289,7 @@ class Evaluation():
         self.dataPath = '/home/xuesong/CAMP/dataset/datasetTest_080823/test_dataset/' + mode
         self.net_GAN = NetworkInference_GAN("pork") # 老参数就用这个了不要改了...
         # self.net_GAN = NetworkInference_GANVer2("pork") # 更多依赖于MSE loss的模型效果还不如原来的...
+        
         self.net_Unet = NetworkInference_Unet("pork", method = "Unet")  # "Unet" or "AttentionUnet" for comparison
         self.net_AttUnet = NetworkInference_Unet("pork", method = "AttentionUnet")  # "Unet" or "AttentionUnet" for comparison
         self.net_GANPlusAttUnet = NetworkInference_GanPlusAttUnet()

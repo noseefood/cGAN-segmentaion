@@ -1,6 +1,7 @@
 '''Used in windows environment'''
 
-from model.Generator import Generator # New structure
+# from model.Generator import Generator # New structure  
+from model.Generator_ReLU import Generator 
 import os
 import sys
 from glob import glob
@@ -56,7 +57,7 @@ class NetworkInference_GANVer2():
         self.train_imtrans = Compose( # Pre-processing
             [   
                 AddChannel(),  # 增加channel
-                Resize((512, 512)), # 跟training保持一致
+                Resize((256, 256)), # 跟training保持一致
                 ScaleIntensity(), # 0-255 -> 0-1
             ]
         )
@@ -321,6 +322,6 @@ class Evaluation():
         
 
 if __name__ == "__main__":
-    test_mode = "2" # 1/2 compounding 3/4 insertion
+    test_mode = "4" # 1/2 compounding 3/4 insertion
     eval = Evaluation(mode = test_mode)
     eval.start()
