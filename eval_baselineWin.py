@@ -47,7 +47,7 @@ class NetworkInference_GANVer2():
     Newest generator 
     '''
     def __init__(self, mode = "pork"):
-        dir_checkpoint_GAN = './test_model/generator_19500.pth'
+        dir_checkpoint_GAN = './test_model/best_model_in1700.pth'
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.generator = Generator().to(self.device)  # input channel = 1
@@ -57,7 +57,7 @@ class NetworkInference_GANVer2():
         self.train_imtrans = Compose( # Pre-processing
             [   
                 AddChannel(),  # 增加channel
-                Resize((256, 256)), # 跟training保持一致
+                Resize((512, 512)), # 跟training保持一致
                 ScaleIntensity(), # 0-255 -> 0-1
             ]
         )
@@ -322,6 +322,6 @@ class Evaluation():
         
 
 if __name__ == "__main__":
-    test_mode = "4" # 1/2 compounding 3/4 insertion
+    test_mode = "1" # 1/2 compounding 3/4 insertion
     eval = Evaluation(mode = test_mode)
     eval.start()
