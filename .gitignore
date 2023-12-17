@@ -5,3 +5,4 @@ results/
 save_model/
 __pycache__/
 data/
+test_model/

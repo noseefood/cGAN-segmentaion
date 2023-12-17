@@ -111,9 +111,6 @@ def train(args, dataloader, generator, discriminator, optim_G, optim_D, loss_adv
                 # writer.add_scalar("val_mean_dice", metric, epoch + 1)
 
 
-            
-
-
         # test
         generator.eval()
 
