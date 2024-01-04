@@ -40,14 +40,14 @@ def main():
     # model.load_state_dict(torch.load(dir_checkpoint_Att))
 
     model = Generator().to(device)
-    dir_checkpoint_GAN = './test_model/best_model_in10900.pth'
+    dir_checkpoint_GAN = './test_model/best_model_in11600.pth'
     model.load_state_dict(torch.load(dir_checkpoint_GAN))
 
     model.eval()
-    target_layers = [model.out_layer[-1]]
+    target_layers = [model.decode_layer1[-1]]
 
-    # img_path = "../Needle_GANseg/data/Data_Pork/imgs/US_02_0062.png"
-    img_path = "../dataset/test_dataset/3/imgs/3075.png"
+    img_path = "../Needle_GANseg/data/Data_Pork/imgs/US_02_0062.png"
+    # img_path = "../dataset/test_dataset/3/imgs/3075.png"
     input_img = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2GRAY)
     # input_img = cv2.normalize(input_img, None, 1, 0, cv2.NORM_MINMAX, cv2.CV_8U)
 
@@ -67,7 +67,6 @@ def main():
     # output = data_transform_post(output) # [C, H, W] [1, 512, 512]
 
     output = output.squeeze(0).cpu().detach().numpy()  # [C, H, W] [1, 512, 512]
-    # output = 
 
 
     cam = GradCAM(model=model, target_layers=target_layers, use_cuda=False)
