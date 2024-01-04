@@ -22,13 +22,17 @@ from monai.transforms import (
 from monai.networks.nets import UNet, AttentionUnet
 import segmentation_models_pytorch as smp # DeepLabV3/DeepLabV3Plus
 
+from errorCal import Calculate_Error
+
 # whether to record the segmentation results
 Video_recording = True
 
 # Metrics
 def dice(pred_mask, gt_mask, k = 1):
+
     intersection = np.sum(pred_mask[gt_mask==k]) * 2.0
     dice = intersection / (np.sum(pred_mask) + np.sum(gt_mask))
+
     return dice
 
 def calculate_iou(gt_mask, pred_mask, cls=255):
@@ -42,6 +46,13 @@ def calculate_iou(gt_mask, pred_mask, cls=255):
     iou = overlap.sum() / float(union.sum())
     
     return iou
+
+def calculate_TipError(gt_mask, pred_mask):
+    """Calculate the tip error of the predicted mask(position and angle)"""
+    pass
+
+def calculate_ConError(gt_mask, pred_mask):
+    pass
 
 class NetworkInference_DeepLabV3():
     def __init__(self):
@@ -82,6 +93,7 @@ class NetworkInference_DeepLabV3():
             full_mask = probs.squeeze().cpu().numpy() # return in cpu  # 
             
             return full_mask
+        
 class NetworkInference_DeepLabV3PLUS():
     def __init__(self):
         # dir_checkpoint = "../Seg_baseline/results/DeeplabV3PLUS/best_metric_model_DeepLabV3PLUS.pth" # Source
@@ -121,7 +133,6 @@ class NetworkInference_DeepLabV3PLUS():
             full_mask = probs.squeeze().cpu().numpy() # return in cpu  # 
             
             return full_mask
-
 
 class NetworkInference_GANVer2():
     '''
@@ -170,7 +181,6 @@ class NetworkInference_GANVer2():
             full_mask = probs.squeeze().cpu().numpy() # return in cpu  # 
             
             return full_mask
-
 
 class NetworkInference_Unet():
     def __init__(self, mode = "pork", method = "Unet"):
@@ -238,7 +248,6 @@ class NetworkInference_Unet():
             
             return full_mask
 
-
 class Evaluation():
     
     def __init__(self, mode = "1"):
@@ -249,6 +258,10 @@ class Evaluation():
         self.net_AttUnet = NetworkInference_Unet("pork", method = "AttentionUnet")  # "Unet" or "AttentionUnet" for comparison
         self.net_Deeplab = NetworkInference_DeepLabV3() # DeepLabV3
         self.net_DeeplabPlus = NetworkInference_DeepLabV3PLUS()
+
+        
+        # 
+        self.Calculate_Error_object = Calculate_Error()
 
         print("dataPath:", self.dataPath)
         self.imgs = glob(self.dataPath + '/imgs' +"/*.png")
@@ -322,6 +335,14 @@ class Evaluation():
             cv2.imshow("output_AttUnet", output_AttUnet)
             cv2.imshow("output_DeeplabV3", output_DeeplabV3)
             cv2.imshow("output_DeeplabV3Plus", output_DeeplabV3Plus)
+
+
+            print(self.Calculate_Error_object.Calculate_Continuity(method = 'Projection', pred = output_Gan, mask = true_mask))
+
+
+            # # save image for analysis
+            # cv2.imwrite("./data/sampleOut_Unet/" + str(i) + ".png", output_Unet)
+            
 
 
             if Video_recording:
@@ -441,6 +462,6 @@ class Evaluation():
         
 
 if __name__ == "__main__":
-    test_mode = "3" # 1/2 compounding 3/4 insertion 
+    test_mode = "2" # 1/2 compounding 3/4 insertion 
     eval = Evaluation(mode = test_mode)
     eval.start()
