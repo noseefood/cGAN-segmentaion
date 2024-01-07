@@ -6,6 +6,12 @@ import matplotlib.pyplot as plt
 # continuity_gan = df_1.loc['Continuity', 'GAN']
 # print(continuity_gan)
 
+# Read in the data
+df_1 = pd.read_csv('./results/df_1.csv', index_col=0)
+df_2 = pd.read_csv('./results/df_2.csv', index_col=0)
+df_3 = pd.read_csv('./results/df_3.csv', index_col=0)
+df_4 = pd.read_csv('./results/df_4.csv', index_col=0)
+df_5 = pd.read_csv('./results/df_5.csv', index_col=0)
 
 
 
@@ -73,13 +79,7 @@ def continuity_vis(df):
 if __name__ == '__main__':
 
 
-    # Read in the data
-    df_1 = pd.read_csv('./results/df_1.csv', index_col=0)
-    df_2 = pd.read_csv('./results/df_2.csv', index_col=0)
-    df_3 = pd.read_csv('./results/df_3.csv', index_col=0)
-    df_4 = pd.read_csv('./results/df_4.csv', index_col=0)
-    df_5 = pd.read_csv('./results/df_5.csv', index_col=0)
-    df_6 = pd.read_csv('./results/df_6.csv', index_col=0)
 
-    continuity_vis(df_2)
+
+    continuity_vis(df_3)
 

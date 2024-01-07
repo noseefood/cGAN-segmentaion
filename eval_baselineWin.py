@@ -375,6 +375,27 @@ class Evaluation():
         Angle_list_DeeplabV3Plus = []
         Angle_list_UnetPlusPlus = []
 
+        Recall_list_GAN = []
+        Recall_list_Unet = []
+        Recall_list_AttUnet = []
+        # Recall_list_DeeplabV3 = []
+        Recall_list_DeeplabV3Plus = []
+        Recall_list_UnetPlusPlus = []
+
+        Precision_list_GAN = []
+        Precision_list_Unet = []
+        Precision_list_AttUnet = []
+        # Precision_list_DeeplabV3 = []
+        Precision_list_DeeplabV3Plus = []
+        Precision_list_UnetPlusPlus = []
+
+        F2_list_GAN = []
+        F2_list_Unet = []
+        F2_list_AttUnet = []
+        # F2_list_DeeplabV3 = []
+        F2_list_DeeplabV3Plus = []
+        F2_list_UnetPlusPlus = []
+
 
         models = ['GAN', 'Unet', 'AttUnet', 'DeeplabV3Plus', 'UnetPlusPlus']
         metrics = ['Recall', 'Precision', 'F2']
@@ -472,9 +493,13 @@ class Evaluation():
                 tip_error_lists[name].append(b)
 
                 recall, precision, F2 = calculate_metrics(predictions[name], true_mask)
+
                 models_metrics[name]['Recall'].append(recall)
                 models_metrics[name]['Precision'].append(precision)
                 models_metrics[name]['F2'].append(F2)
+            
+
+
                 
             
             
@@ -501,6 +526,9 @@ class Evaluation():
             # dice_list_DeeplabV3.append(dice(output_DeeplabV3, true_mask, k = 255))
             dice_list_DeeplabV3Plus.append(dice(output_DeeplabV3Plus, true_mask, k = 255))
             dice_list_UnetPlusPlus.append(dice(output_UnetPlusPlus, true_mask, k = 255))
+
+            # Recall, Precision, F2
+
 
 
 
@@ -533,10 +561,7 @@ class Evaluation():
         # print("mean continuity based DeeplabV3:", np.nanmean(Continuity_list_DeeplabV3), "std:", np.nanstd(Continuity_list_DeeplabV3))
         print("mean continuity based DeeplabV3Plus:", np.nanmean(Continuity_list_DeeplabV3Plus), "std:", np.nanstd(Continuity_list_DeeplabV3Plus))
         print("mean continuity based UnetPlusPlus:", np.nanmean(Continuity_list_UnetPlusPlus), "std:", np.nanstd(Continuity_list_UnetPlusPlus))
-
-
-
-        
+      
 
         print("mean TipError based GAN:", np.nanmean(TipError_list_GAN), "std:", np.nanstd(TipError_list_GAN))
         print("mean TipError based Unet:", np.nanmean(TipError_list_Unet), "std:", np.nanstd(TipError_list_Unet))
@@ -557,16 +582,16 @@ class Evaluation():
             for model in models:
                 print(f'mean {metric} based {model}:', np.nanmean(models_metrics[model][metric]), f'std {metric} based {model}:', np.nanstd(models_metrics[model][metric]))
 
-
-        if Video_recording:
+        # models_metrics[name]['Recall']
+        if csv_recording:
             # Create a dictionary of data
             data = {
-                'GAN': {'dice': dice_list_GAN, 'iou': iou_list_GAN, 'Continuity': Continuity_list_GAN, 'TipError': TipError_list_GAN, 'Angle': Angle_list_GAN},
-                'Unet': {'dice': dice_list_Unet, 'iou': iou_list_Unet, 'Continuity': Continuity_list_Unet, 'TipError': TipError_list_Unet, 'Angle': Angle_list_Unet},
-                'AttUnet': {'dice': dice_list_AttUnet, 'iou': iou_list_AttUnet, 'Continuity': Continuity_list_AttUnet, 'TipError': TipError_list_AttUnet, 'Angle': Angle_list_AttUnet},
-                'DeeplabV3Plus': {'dice': dice_list_DeeplabV3Plus, 'iou': iou_list_DeeplabV3Plus, 'Continuity': Continuity_list_DeeplabV3Plus, 'TipError': TipError_list_DeeplabV3Plus, 'Angle': Angle_list_DeeplabV3Plus},
-                'UnetPlusPlus': {'dice': dice_list_UnetPlusPlus, 'iou': iou_list_UnetPlusPlus, 'Continuity': Continuity_list_UnetPlusPlus, 'TipError': TipError_list_UnetPlusPlus, 'Angle': Angle_list_UnetPlusPlus},
-                # Add more models if needed
+                'GAN': {'dice': dice_list_GAN, 'iou': iou_list_GAN, 'Recall':  models_metrics['GAN']['Recall'], 'Precision':  models_metrics['GAN']['Precision'], 'F2':  models_metrics['GAN']['F2'], 'Continuity': Continuity_list_GAN, 'TipError': TipError_list_GAN, 'Angle': Angle_list_GAN},
+                'Unet': {'dice': dice_list_Unet, 'iou': iou_list_Unet, 'Recall':  models_metrics['Unet']['Recall'], 'Precision':  models_metrics['Unet']['Precision'], 'F2':  models_metrics['Unet']['F2'], 'Continuity': Continuity_list_Unet, 'TipError': TipError_list_Unet, 'Angle': Angle_list_Unet},
+                'AttUnet': {'dice': dice_list_AttUnet, 'iou': iou_list_AttUnet, 'Recall':  models_metrics['AttUnet']['Recall'], 'Precision':  models_metrics['AttUnet']['Precision'], 'F2':  models_metrics['AttUnet']['F2'], 'Continuity': Continuity_list_AttUnet, 'TipError': TipError_list_AttUnet, 'Angle': Angle_list_AttUnet},  
+                'DeeplabV3Plus': {'dice': dice_list_DeeplabV3Plus, 'iou': iou_list_DeeplabV3Plus, 'Recall':  models_metrics['DeeplabV3Plus']['Recall'], 'Precision':  models_metrics['DeeplabV3Plus']['Precision'], 'F2':  models_metrics['DeeplabV3Plus']['F2'], 'Continuity': Continuity_list_DeeplabV3Plus, 'TipError': TipError_list_DeeplabV3Plus, 'Angle': Angle_list_DeeplabV3Plus},
+                'UnetPlusPlus': {'dice': dice_list_UnetPlusPlus, 'iou': iou_list_UnetPlusPlus, 'Recall':  models_metrics['UnetPlusPlus']['Recall'], 'Precision':  models_metrics['UnetPlusPlus']['Precision'], 'F2':  models_metrics['UnetPlusPlus']['F2'], 'Continuity': Continuity_list_UnetPlusPlus, 'TipError': TipError_list_UnetPlusPlus, 'Angle': Angle_list_UnetPlusPlus},
+
             }
 
             # Create DataFrame
@@ -607,6 +632,6 @@ class Evaluation():
         
 
 if __name__ == "__main__":
-    test_mode = "6" # 1/2 compounding 3/4 insertion 
+    test_mode = "4" # 1/2 compounding 3/4 insertion 
     eval = Evaluation(mode = test_mode)
     eval.start()
