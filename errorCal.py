@@ -5,13 +5,31 @@ from skimage.morphology import skeletonize
 from skimage.measure import label, regionprops
 from sklearn.decomposition import PCA
 from scipy.ndimage import convolve
+from sklearn.linear_model import LinearRegression
+from scipy.spatial.distance import directed_hausdorff
 
 
 
-def Calculate_TipError(pred, mask):
+def calculate_metrics(mask, prediction):
 
-    pass
+    # 二值化处理
+    _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
+    _, prediction = cv2.threshold(prediction, 127, 255, cv2.THRESH_BINARY)
 
+    # 计算混淆矩阵
+    TP = np.sum((mask == 255) & (prediction == 255))
+    TN = np.sum((mask == 0) & (prediction == 0))
+    FP = np.sum((mask == 0) & (prediction == 255))
+    FN = np.sum((mask == 255) & (prediction == 0))
+
+    # 计算召回率和精确度
+    recall = TP / (TP + FN) if (TP + FN) != 0 else 0
+    precision = TP / (TP + FP) if (TP + FP) != 0 else 0
+
+    # 计算 F2 分数
+    F2 = (1 + 2**2) * precision * recall / (2**2 * precision + recall) if (precision + recall) != 0 else 0
+
+    return recall, precision, F2
 
 
 class Calculate_Error():
@@ -22,26 +40,164 @@ class Calculate_Error():
 
         # self.pred = pred
         # self.mask = mask
-        # self.filtered_pred = self.outlier_filter(pred, mask)
+        # self.filtered_pred = self.outlier_filter(pred, smask)
         pass
 
-    def Calculate_TipError(self):
+    def Calculate_TipError(self, pred = None, mask = None, method = 'canny'):
 
         '''Calculate the tip position and angle error'''
 
-        pass
+        filter_image, exist_seg = self.outlier_filter(pred, mask)
 
-    def Calculate_Continuity(self, method = 'Box', pred = None, mask = None):
+        if exist_seg == False:
+
+            return float('NaN'), float('NaN')
+        
+        else:
+
+            ang_pred, tip_pred = self.Calculate_TipOrientation(filter_image, method)
+            ang_mask, tip_mask = self.Calculate_TipOrientation(mask, method)
+
+            # 计算角度误差
+            angle_error = abs(ang_pred - ang_mask)
+
+            # 计算位置误差
+            tip_error = euclidean(tip_pred, tip_mask)
+
+            return angle_error, tip_error
+
+    
+    def Calculate_TipOrientation(self, image, method):
+        
+        if method == 'canny':
+            # 边缘检测
+            edges = cv2.Canny(image, 250, 255)
+
+            # 提取边缘点的坐标
+            y, x = np.nonzero(edges)
+            points = np.column_stack((x, y))
+
+            # 线性回归拟合
+            model = LinearRegression()
+            model.fit(points[:, 0].reshape(-1, 1), points[:, 1])
+
+            # 计算倾斜角度
+            slope = model.coef_[0]
+            angle = np.arctan(slope) * 180 / np.pi
+
+            # 计算靠右侧的端点
+            x_sorted = np.sort(points[:, 0])
+            y_pred = model.predict(x_sorted.reshape(-1, 1))
+            rightmost_point = (x_sorted[-1], int(y_pred[-1]))
+
+            return angle, rightmost_point
+        
+        if method == 'threshold':
+            # 提取特征点
+            y, x = np.nonzero(image)
+
+            # 线性回归拟合
+            model = LinearRegression()
+            model.fit(x.reshape(-1, 1), y)
+
+            # 计算倾斜角度
+            slope = model.coef_[0]
+            angle = np.arctan(slope) * 180 / np.pi
+
+            # 找到靠右侧的端点
+            x_sorted = np.sort(x)
+            rightmost_x = x_sorted[-1]
+            rightmost_y = model.predict([[rightmost_x]])[0]
+
+            return angle, (rightmost_x, rightmost_y)
+        
+        if method == 'skeleton':
+
+            skeleton = skeletonize(image // 255).astype(np.uint8)
+
+            # 提取骨架点
+            y, x = np.nonzero(skeleton)
+
+            # 线性回归拟合
+            model = LinearRegression()
+            model.fit(x.reshape(-1, 1), y)
+
+            # 计算倾斜角度
+            slope = model.coef_[0]
+            angle = np.arctan(slope) * 180 / np.pi
+
+            # 找到靠右侧的端点
+            x_sorted = np.sort(x)
+            rightmost_x = x_sorted[-1]
+            rightmost_y = model.predict([[rightmost_x]])[0]
+
+            return angle, (rightmost_x, rightmost_y)
+
+
+    def Calculate_Continuity(self, method = 'LineProj', pred = None, mask = None):
 
         filtered_pred, exist_seg = self.outlier_filter(pred, mask)
 
         if exist_seg == False:
-            return 0
+            return float('NaN')
         else:
             if method == 'Box':
                 return self.Calculate_Continuity_Box(filtered_pred)
             elif method == 'Projection':
                 return self.Calculate_Continuity_projection(filtered_pred, mask)
+            elif method == 'LineProj':
+                return self.Calculate_Continuity_LineProj(filtered_pred)
+            elif method == 'Hausdorff':
+                return self.Calculate_Continuity_Hausdorff(filtered_pred, mask)
+            
+
+    def Calculate_Continuity_LineProj(self, image):
+
+        '''Calculate the continuity of the needle by projecting the needle to the line'''
+
+        thickness_factor = 1
+
+        # 找到所有线段的轮廓
+        contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # 合并所有轮廓到一个点集中
+        all_points = np.vstack([cnt.reshape(-1, 2) for cnt in contours])
+
+        # 计算合并后的点集的旋转包围盒
+        rect = cv2.minAreaRect(all_points)
+        box = cv2.boxPoints(rect)
+        box = np.int0(box)
+
+        # 计算旋转角度和中心点
+        center, size, angle = rect
+        if size[0] < size[1]:
+            size = (size[1], size[0] * thickness_factor)
+            angle += 90
+        else:
+            size = (size[0], size[1] * thickness_factor)
+
+        # 旋转图像
+        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        rotated = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
+
+        # 计算旋转后的包围盒位置
+        x, y = np.int0(center)
+        x, y = max(0, x - int(size[0] // 2)), max(0, y - int(size[1] // 2))
+        cropped = rotated[y:y + int(size[1]), x:x + int(size[0])]
+        
+        # cv2.imshow("cropped", cropped)
+        # cv2.waitKey(0)
+
+        # 分析连续性 计算一个二维数组中每一列全黑（值为0）的列数
+        black_count = np.sum(cropped == 0, axis=0) # 每一列的黑色像素数
+        # black_count = np.sum(black_count == cropped.shape[0])  # 全黑的列数
+        black_count = np.sum(black_count >= cropped.shape[0] * 0.7) #
+        # 计算连续性指标
+        continuity = 1 - (black_count / size[0]) if size[0] > 0 else 1
+
+        return continuity
+
+            
 
     def Calculate_Continuity_Box(self, pred):
 
@@ -71,6 +227,29 @@ class Calculate_Error():
         # cv2.waitKey(0)
 
         return continuity_index
+
+    def extract_feature_points(self, image):
+        # 这里以骨架化为例提取特征点
+        skeleton = cv2.ximgproc.thinning(image)
+        cv2.imshow("Skeleton", skeleton)
+        cv2.waitKey(0)
+        y, x = np.nonzero(skeleton)
+        return np.column_stack((x, y))
+
+    def Calculate_Continuity_Hausdorff(self, pred, mask):
+        # 提取特征点
+        points_mask = self.extract_feature_points(mask)
+        points_predicted = self.extract_feature_points(pred)
+
+        # 计算豪斯多夫距离
+        hausdorff_dist = max(directed_hausdorff(points_mask, points_predicted)[0],
+                            directed_hausdorff(points_predicted, points_mask)[0])
+
+        # 转换为连续性得分
+        continuity_score = hausdorff_dist
+
+        return continuity_score
+
 
     def outlier_filter(self, pred, mask, range = 5):
 

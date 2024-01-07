@@ -1,4 +1,4 @@
-from model.Generator import Generator
+from model.Generator_original import Generator
 import os
 import sys
 from glob import glob
