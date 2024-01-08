@@ -9,6 +9,9 @@ from sklearn.linear_model import LinearRegression
 from scipy.spatial.distance import directed_hausdorff
 
 
+image_H = 50
+image_W = 51.3
+
 
 def calculate_metrics(mask, prediction):
 
@@ -38,33 +41,121 @@ class Calculate_Error():
 
     def __init__(self):
 
-        # self.pred = pred
-        # self.mask = mask
-        # self.filtered_pred = self.outlier_filter(pred, smask)
+
         pass
 
     def Calculate_TipError(self, pred = None, mask = None, method = 'canny'):
 
-        '''Calculate the tip position and angle error'''
+        '''To calculate the continuity, don't use filter_image'''
+        _, exist_seg = self.outlier_filter(pred, mask) # 
 
-        filter_image, exist_seg = self.outlier_filter(pred, mask)
+        '''To calculate the tip error/angle error'''
+        # needs some filter(outlier??)
+        # filter_image_Tip = self.outlier_filter_outlier(pred)
+        filter_image_Tip = pred
+        
 
         if exist_seg == False:
-
+            # only when the mask has a segment, the tip error/angle error start to calculate!!
             return float('NaN'), float('NaN')
-        
         else:
 
-            ang_pred, tip_pred = self.Calculate_TipOrientation(filter_image, method)
+            ang_pred, tip_pred = self.Calculate_TipOrientation(filter_image_Tip, method)
             ang_mask, tip_mask = self.Calculate_TipOrientation(mask, method)
 
-            # 计算角度误差
-            angle_error = abs(ang_pred - ang_mask)
 
-            # 计算位置误差
-            tip_error = euclidean(tip_pred, tip_mask)
+            if np.isnan(ang_pred) or np.isnan(ang_mask):
+                # if in this stage the angle is nan, it means the model failed to predict the angle
+                return float('NaN'), float('NaN')
+            
+            else:
 
-            return angle_error, tip_error
+                # 计算角度误差
+                angle_error = abs(ang_pred - ang_mask)
+
+                # 计算位置误差
+                tip_error = euclidean(tip_pred, tip_mask)
+
+                return angle_error, tip_error
+
+    def outlier_filter_outlier(self, pred, range = 10):
+        '''According the pred structure, only extract the near needle part from the pred image'''
+        # Find contours in the mask
+        contours, _ = cv2.findContours(pred, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        filtered_pred = None
+
+        if len(contours) != 0:
+
+            # Find the rotated rectangle for each contour and calculate their areas
+            rects = [(cv2.minAreaRect(cnt), cv2.contourArea(cnt)) for cnt in contours]
+
+            # Sort the rectangles by area in descending order and take the first one
+            rects.sort(key=lambda x: x[1], reverse=True)
+            max_rect = rects[0][0] if rects else None
+
+            # Initialize a list with the points of the maximum rectangle
+            all_points = [cv2.boxPoints(max_rect)]
+
+            # Iterate over the remaining rectangles
+            for rect, _ in rects[1:]:
+                # Check if the rectangle is collinear with the maximum rectangle
+                if self.are_collinear(max_rect, rect):
+                    # If it is, add its points to the list
+                    all_points.append(cv2.boxPoints(rect))
+
+            # Stack all the points into a single array
+            all_points = np.vstack(all_points)
+
+            # Calculate the minimum area rectangle that encloses all the points
+            rect = cv2.minAreaRect(all_points)
+
+            # Get the center, size, and angle from the rectangle
+            center, size, angle = rect
+
+            # Convert size to integer
+            
+            size = (int(size[0]) , int(size[1]) * range)
+
+            # Get the four points of the rectangle
+            rect = (center, size, angle)
+            box = cv2.boxPoints(rect)
+            box = np.int0(box)
+
+            # Create an all black image
+            mask_outside = np.zeros_like(pred)
+
+            # Fill the area inside the rectangle with white
+            cv2.fillPoly(mask_outside, [box], 255)
+
+            # Bitwise-and with the pred image
+            filtered_pred = cv2.bitwise_and(pred, mask_outside)
+
+            cv2.imshow("outlier filtered", filtered_pred)
+
+        return filtered_pred
+
+    def are_collinear(self, rect1, rect2, tolerance=3):
+        # center, size, angle = rect
+        # Calculate the difference in angles  
+        angle_diff = abs(rect1[2] - rect2[2])
+        
+        # Calculate the slope and y-intercept of the line between the centers
+        x_diff = rect2[0][0] - rect1[0][0]
+        y_diff = rect2[0][1] - rect1[0][1]
+        if abs(x_diff) < tolerance:
+            slope = float('inf')
+        else:
+            slope = y_diff / x_diff
+
+        y_intercept = rect1[0][1] - slope * rect1[0][0]
+        
+        # Calculate the angle of the line
+        line_angle = np.degrees(np.arctan(slope)) if slope != float('inf') else 90
+        
+        # Check if the difference in angles is within the tolerance
+        # 1. Check if the difference in angles is within the tolerance
+        # 2. Check if the line is collinear with the rectangle
+        return angle_diff < tolerance and abs(line_angle - rect1[2]) < tolerance
 
     
     def Calculate_TipOrientation(self, image, method):
@@ -76,22 +167,30 @@ class Calculate_Error():
             # 提取边缘点的坐标
             y, x = np.nonzero(edges)
             points = np.column_stack((x, y))
+            # print(points)
 
-            # 线性回归拟合
-            model = LinearRegression()
-            model.fit(points[:, 0].reshape(-1, 1), points[:, 1])
+            if points.size == 0 :
 
-            # 计算倾斜角度
-            slope = model.coef_[0]
-            angle = np.arctan(slope) * 180 / np.pi
+                return float('NaN'), (float('NaN'), float('NaN'))
+                print("Empty points !")
+            
+            else:
 
-            # 计算靠右侧的端点
-            x_sorted = np.sort(points[:, 0])
-            y_pred = model.predict(x_sorted.reshape(-1, 1))
-            rightmost_point = (x_sorted[-1], int(y_pred[-1]))
+                # 线性回归拟合
+                model = LinearRegression()
+                model.fit(points[:, 0].reshape(-1, 1), points[:, 1])
 
-            return angle, rightmost_point
-        
+                # 计算倾斜角度
+                slope = model.coef_[0]
+                angle = np.arctan(slope) * 180 / np.pi
+
+                # 计算靠右侧的端点
+                x_sorted = np.sort(points[:, 0])
+                y_pred = model.predict(x_sorted.reshape(-1, 1))
+                rightmost_point = (x_sorted[-1], int(y_pred[-1]))
+
+                return angle, rightmost_point
+            
         if method == 'threshold':
             # 提取特征点
             y, x = np.nonzero(image)
@@ -136,7 +235,7 @@ class Calculate_Error():
 
     def Calculate_Continuity(self, method = 'LineProj', pred = None, mask = None):
 
-        filtered_pred, exist_seg = self.outlier_filter(pred, mask)
+        filtered_pred, exist_seg = self.outlier_filter(pred, mask) # Continuity calculation 
 
         if exist_seg == False:
             return float('NaN')
@@ -146,12 +245,12 @@ class Calculate_Error():
             elif method == 'Projection':
                 return self.Calculate_Continuity_projection(filtered_pred, mask)
             elif method == 'LineProj':
-                return self.Calculate_Continuity_LineProj(filtered_pred)
+                return self.Calculate_Continuity_LineProj(filtered_pred, mask)
             elif method == 'Hausdorff':
                 return self.Calculate_Continuity_Hausdorff(filtered_pred, mask)
             
 
-    def Calculate_Continuity_LineProj(self, image):
+    def Calculate_Continuity_LineProj(self, image, mask):
 
         '''Calculate the continuity of the needle by projecting the needle to the line'''
 
@@ -161,39 +260,45 @@ class Calculate_Error():
         contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         # 合并所有轮廓到一个点集中
-        all_points = np.vstack([cnt.reshape(-1, 2) for cnt in contours])
+        # 只有当filter之后的prediction存在contours时,才有必要计算连续性,否则直接为0!!!
+        if contours:
+            all_points = np.vstack([cnt.reshape(-1, 2) for cnt in contours])
+            # 计算合并后的点集的旋转包围盒
+            rect = cv2.minAreaRect(all_points)
+            box = cv2.boxPoints(rect)
+            box = np.int0(box)
 
-        # 计算合并后的点集的旋转包围盒
-        rect = cv2.minAreaRect(all_points)
-        box = cv2.boxPoints(rect)
-        box = np.int0(box)
+            # 计算旋转角度和中心点
+            center, size, angle = rect
+            if size[0] < size[1]:
+                size = (size[1], size[0] * thickness_factor)
+                angle += 90
+            else:
+                size = (size[0], size[1] * thickness_factor)
 
-        # 计算旋转角度和中心点
-        center, size, angle = rect
-        if size[0] < size[1]:
-            size = (size[1], size[0] * thickness_factor)
-            angle += 90
+            # 旋转图像
+            M = cv2.getRotationMatrix2D(center, angle, 1.0) # Scale = 1.0
+            rotated = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
+
+            # 计算旋转后的包围盒位置
+            x, y = np.int0(center)
+            x, y = max(0, x - int(size[0] // 2)), max(0, y - int(size[1] // 2))
+            cropped = rotated[y:y + int(size[1]), x:x + int(size[0])]
+            
+            # cv2.imshow("cropped", cropped)
+            # cv2.waitKey(0)
+
+            # 分析连续性 计算一个二维数组中每一列全黑（值为0）的列数
+            black_count = np.sum(cropped == 0, axis=0) # 每一列的黑色像素数
+            # black_count = np.sum(black_count == cropped.shape[0])  # 全黑的列数
+            black_count = np.sum(black_count >= cropped.shape[0] * 0.7) #
+            # 计算连续性指标
+            continuity = 1 - (black_count / size[0]) if size[0] > 0 else 1
+
+        # all_points = np.vstack([cnt.reshape(-1, 2) for cnt in contours]) # bug: if contours is empty, it will raise an error
         else:
-            size = (size[0], size[1] * thickness_factor)
+            continuity = 0
 
-        # 旋转图像
-        M = cv2.getRotationMatrix2D(center, angle, 1.0)
-        rotated = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
-
-        # 计算旋转后的包围盒位置
-        x, y = np.int0(center)
-        x, y = max(0, x - int(size[0] // 2)), max(0, y - int(size[1] // 2))
-        cropped = rotated[y:y + int(size[1]), x:x + int(size[0])]
-        
-        # cv2.imshow("cropped", cropped)
-        # cv2.waitKey(0)
-
-        # 分析连续性 计算一个二维数组中每一列全黑（值为0）的列数
-        black_count = np.sum(cropped == 0, axis=0) # 每一列的黑色像素数
-        # black_count = np.sum(black_count == cropped.shape[0])  # 全黑的列数
-        black_count = np.sum(black_count >= cropped.shape[0] * 0.7) #
-        # 计算连续性指标
-        continuity = 1 - (black_count / size[0]) if size[0] > 0 else 1
 
         return continuity
 
@@ -249,6 +354,62 @@ class Calculate_Error():
         continuity_score = hausdorff_dist
 
         return continuity_score
+    
+
+    def outlier_filter_Tip(self, pred, mask, range = 5):
+
+        '''According the previous frames, only extract the needle part from the predictions image'''
+
+
+
+        # Find contours in the mask
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        exist_seg = False
+        filtered_pred = None
+
+        if len(contours) != 0:
+
+            # Find the rotated rectangle for each contour
+            rects = [cv2.minAreaRect(cnt) for cnt in contours]
+
+            # For simplicity, let's take the first rectangle
+            rect = rects[0]
+
+            # Get the center, size, and angle from the rectangle
+            center, size, angle = rect
+
+            # Convert size to integer
+            
+            size = (int(size[0]) , int(size[1]) * range)
+
+            # Get the four points of the rectangle
+            rect = (center, size, angle)
+            box = cv2.boxPoints(rect)
+            box = np.int0(box)
+
+            # Create an all black image
+            mask_outside = np.zeros_like(pred)
+
+            # Fill the area outside the rectangle with white
+            cv2.fillPoly(mask_outside, [box], 255)
+
+            # Bitwise-and with the pred image
+            filtered_pred = cv2.bitwise_and(pred, mask_outside)
+
+            # Display the result image
+            # result_BGR = cv2.cvtColor(filtered_pred, cv2.COLOR_GRAY2BGR)
+            # cv2.polylines(filtered_pred, [box], True, (0, 255, 0), 2)
+            # cv2.imshow("Result", result_BGR)
+            # cv2.imshow("Pred", pred)
+            # cv2.imshow("Mask", mask)
+            # cv2.waitKey(0)
+
+            # safe check
+            exist_seg = True
+
+            
+        return filtered_pred, exist_seg
+
 
 
     def outlier_filter(self, pred, mask, range = 5):
@@ -272,6 +433,7 @@ class Calculate_Error():
             center, size, angle = rect
 
             # Convert size to integer
+            # int(size[0])这个方向有必要扩大吗??
             
             size = (int(size[0]) , int(size[1]) * range)
 

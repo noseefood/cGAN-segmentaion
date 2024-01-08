@@ -27,6 +27,7 @@ import pandas as pd
 
 
 # whether to record the segmentation results
+visualizaion = True
 Video_recording = True
 csv_recording = True
 
@@ -290,6 +291,52 @@ class NetworkInference_Unet():
             
             return full_mask
 
+class NetworkInference_GAN_FirstStage():
+    '''
+    Newest generator 
+    '''
+    def __init__(self, mode = "pork"):
+
+        dir_checkpoint_GAN = './test_model/FirstStage.pth'  # from first stage only using focal loss
+        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.generator = Generator().to(self.device)  # input channel = 1
+        self.generator.load_state_dict(torch.load(dir_checkpoint_GAN))
+        self.generator.eval() # eval mode
+
+        self.train_imtrans = Compose( # Pre-processing
+            [   
+                AddChannel(),  # 增加channel
+                Resize((512, 512)), # 跟training保持一致
+                ScaleIntensity(), # 0-255 -> 0-1
+            ]
+        )
+        # self.tf = Compose([Activations(sigmoid=True), Resize((657, 671)), AsDiscrete(threshold=0.5)])  # 先拉伸到原来的大小, 别忘了asdiscrete二值化
+        self.tf = Compose([Activations(sigmoid=True),Resize((657, 671)), AsDiscrete(threshold=0.5)]) 
+
+    def inference(self, img, tf = None):
+        
+        with torch.no_grad():
+            
+            # TODO:检测输入图片的通道数，如果是3通道，需要转换为1通道
+
+            img = self.train_imtrans(img) # compose会自动返回tensor torch.Size([1, 512, 512])
+
+            img = img.to(self.device) # torch.Size([1, 512, 512])   HWC to CHW：img_trans = img_nd.transpose((2, 0, 1))
+            img = img.unsqueeze(0) # torch.Size([1, 1, 512, 512]) unsqueeze扩增维度
+
+            output = self.generator(img)
+            probs = output.squeeze(0) # squeeze压缩维度 torch.Size([1, 512, 512])
+
+            if tf is not None:
+                self.tf = tf
+
+            probs = self.tf(probs.cpu()) # 重新拉伸到原来的大小
+            full_mask = probs.squeeze().cpu().numpy() # return in cpu  # 
+            
+            return full_mask
+
 class Evaluation():
     
     def __init__(self, mode = "1"):
@@ -302,6 +349,7 @@ class Evaluation():
         # self.net_Deeplab = NetworkInference_DeepLabV3() # DeepLabV3
         self.net_DeeplabPlus = NetworkInference_DeepLabV3PLUS()
         self.net_UnetPlusPlus = NetworkInference_UnetPLUSPLUS()
+        self.net_GAN_FirstStage = NetworkInference_GAN_FirstStage("pork") # for first stage only using focal loss
         
         # 
         self.Calculate_Error_object = Calculate_Error()
@@ -325,6 +373,7 @@ class Evaluation():
             # video_dir_DeeplabV3 = './results/Deeplab_' + mode + '.avi'
             video_dir_DeeplabV3Plus = './results/DeeplabPlus_' + mode + '.avi'
 
+
             self.videoWriter_img = cv2.VideoWriter(video_dir_img, fourcc, fps, img_size, isColor=True) # 3 channels
             self.videoWriter_mask = cv2.VideoWriter(video_dir_mask, fourcc, fps, img_size, isColor=False)
             self.videoWriter_GAN = cv2.VideoWriter(video_dir_GAN, fourcc, fps, img_size, isColor=False)
@@ -346,6 +395,7 @@ class Evaluation():
         # dice_list_DeeplabV3 = []
         dice_list_DeeplabV3Plus = []
         dice_list_UnetPlusPlus = []
+        dice_list_GAN_FirstStage = []
 
         iou_list_GAN = []
         iou_list_Unet = []
@@ -353,6 +403,7 @@ class Evaluation():
         # iou_list_DeeplabV3 = []
         iou_list_DeeplabV3Plus = []
         iou_list_UnetPlusPlus = []
+        iou_list_GAN_FirstStage = []
 
         Continuity_list_GAN = []
         Continuity_list_Unet = []
@@ -360,6 +411,7 @@ class Evaluation():
         # Continuity_list_DeeplabV3 = []
         Continuity_list_DeeplabV3Plus = []
         Continuity_list_UnetPlusPlus = []
+        Continuity_list_GAN_FirstStage = []
 
         TipError_list_GAN = []
         TipError_list_Unet = []
@@ -367,6 +419,7 @@ class Evaluation():
         # TipError_list_DeeplabV3 = []
         TipError_list_DeeplabV3Plus = []
         TipError_list_UnetPlusPlus = []
+        TipError_list_GAN_FirstStage = []
 
         Angle_list_GAN = []
         Angle_list_Unet = []
@@ -374,30 +427,10 @@ class Evaluation():
         # Angle_list_DeeplabV3 = []
         Angle_list_DeeplabV3Plus = []
         Angle_list_UnetPlusPlus = []
-
-        Recall_list_GAN = []
-        Recall_list_Unet = []
-        Recall_list_AttUnet = []
-        # Recall_list_DeeplabV3 = []
-        Recall_list_DeeplabV3Plus = []
-        Recall_list_UnetPlusPlus = []
-
-        Precision_list_GAN = []
-        Precision_list_Unet = []
-        Precision_list_AttUnet = []
-        # Precision_list_DeeplabV3 = []
-        Precision_list_DeeplabV3Plus = []
-        Precision_list_UnetPlusPlus = []
-
-        F2_list_GAN = []
-        F2_list_Unet = []
-        F2_list_AttUnet = []
-        # F2_list_DeeplabV3 = []
-        F2_list_DeeplabV3Plus = []
-        F2_list_UnetPlusPlus = []
+        Angle_list_GAN_FirstStage = []
 
 
-        models = ['GAN', 'Unet', 'AttUnet', 'DeeplabV3Plus', 'UnetPlusPlus']
+        models = ['GAN', 'Unet', 'AttUnet', 'DeeplabV3Plus', 'UnetPlusPlus', 'GAN_FirstStage']
         metrics = ['Recall', 'Precision', 'F2']
 
         models_metrics = {model: {metric: [] for metric in metrics} for model in models}
@@ -416,6 +449,7 @@ class Evaluation():
             # output_DeeplabV3 = self.net_Deeplab.inference(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)) # 0-1
             output_DeeplabV3Plus = self.net_DeeplabPlus.inference(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)) # 0-1
             output_UnetPlusPlus = self.net_UnetPlusPlus.inference(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)) # 0-1
+            output_Gan_FirstStage = self.net_GAN_FirstStage.inference(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)) # 0-1
 
             output_Gan = cv2.normalize(output_Gan, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U) # 0-1 -> 0-255
             output_Unet = cv2.normalize(output_Unet, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U) # 0-1 -> 0-255
@@ -423,16 +457,19 @@ class Evaluation():
             # output_DeeplabV3 = cv2.normalize(output_DeeplabV3, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U) # 0-1 -> 0-255
             output_DeeplabV3Plus = cv2.normalize(output_DeeplabV3Plus, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U) # 0-1 -> 0-255
             output_UnetPlusPlus = cv2.normalize(output_UnetPlusPlus, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U) # 0-1 -> 0-255
-
+            output_Gan_FirstStage = cv2.normalize(output_Gan_FirstStage, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U) # 0-1 -> 0-255
+            
             # print("Image data type:", output_Gan.dtype)
             # print("Image data type:", output_Unet.dtype)
 
-            cv2.imshow("output_GAN", output_Gan)    
-            cv2.imshow("output_Unet", output_Unet)
-            cv2.imshow("output_AttUnet", output_AttUnet)
-            # cv2.imshow("output_DeeplabV3", output_DeeplabV3)
-            cv2.imshow("output_DeeplabV3Plus", output_DeeplabV3Plus)
-            cv2.imshow("output_UnetPlusPlus", output_UnetPlusPlus)
+            if visualizaion:
+                cv2.imshow("output_GAN", output_Gan)    
+                cv2.imshow("output_Unet", output_Unet)
+                cv2.imshow("output_AttUnet", output_AttUnet)
+                # cv2.imshow("output_DeeplabV3", output_DeeplabV3)
+                cv2.imshow("output_DeeplabV3Plus", output_DeeplabV3Plus)
+                cv2.imshow("output_UnetPlusPlus", output_UnetPlusPlus)
+                cv2.imshow("output_Gan_FirstStage", output_Gan_FirstStage)
 
 
             if Video_recording:
@@ -481,10 +518,11 @@ class Evaluation():
             # Continuity_list_DeeplabV3.append(self.Calculate_Error_object.Calculate_Continuity(method = continuity_method, pred = output_DeeplabV3, mask = true_mask))
             Continuity_list_DeeplabV3Plus.append(self.Calculate_Error_object.Calculate_Continuity(method = continuity_method, pred = output_DeeplabV3Plus, mask = true_mask))
             Continuity_list_UnetPlusPlus.append(self.Calculate_Error_object.Calculate_Continuity(method = continuity_method, pred = output_UnetPlusPlus, mask = true_mask))
+            Continuity_list_GAN_FirstStage.append(self.Calculate_Error_object.Calculate_Continuity(method = continuity_method, pred = output_Gan_FirstStage, mask = true_mask))
             
-            predictions = {'GAN': output_Gan, 'Unet': output_Unet, 'AttUnet': output_AttUnet, 'DeeplabV3Plus': output_DeeplabV3Plus, 'UnetPlusPlus': output_UnetPlusPlus}
-            angle_lists = {'GAN': Angle_list_GAN, 'Unet': Angle_list_Unet, 'AttUnet': Angle_list_AttUnet, 'DeeplabV3Plus': Angle_list_DeeplabV3Plus, 'UnetPlusPlus': Angle_list_UnetPlusPlus}
-            tip_error_lists = {'GAN': TipError_list_GAN, 'Unet': TipError_list_Unet, 'AttUnet': TipError_list_AttUnet, 'DeeplabV3Plus': TipError_list_DeeplabV3Plus, 'UnetPlusPlus': TipError_list_UnetPlusPlus}
+            predictions = {'GAN': output_Gan, 'Unet': output_Unet, 'AttUnet': output_AttUnet, 'DeeplabV3Plus': output_DeeplabV3Plus, 'UnetPlusPlus': output_UnetPlusPlus, 'GAN_FirstStage': output_Gan_FirstStage}
+            angle_lists = {'GAN': Angle_list_GAN, 'Unet': Angle_list_Unet, 'AttUnet': Angle_list_AttUnet, 'DeeplabV3Plus': Angle_list_DeeplabV3Plus, 'UnetPlusPlus': Angle_list_UnetPlusPlus, 'GAN_FirstStage': Angle_list_GAN_FirstStage}
+            tip_error_lists = {'GAN': TipError_list_GAN, 'Unet': TipError_list_Unet, 'AttUnet': TipError_list_AttUnet, 'DeeplabV3Plus': TipError_list_DeeplabV3Plus, 'UnetPlusPlus': TipError_list_UnetPlusPlus, 'GAN_FirstStage': TipError_list_GAN_FirstStage}
 
             for name, pred in predictions.items():
 
@@ -510,6 +548,7 @@ class Evaluation():
             # iou_deeplabv3 = calculate_iou(true_mask, output_DeeplabV3)
             iou_deeplabv3plus = calculate_iou(true_mask, output_DeeplabV3Plus)
             iou_unetplusplus = calculate_iou(true_mask, output_UnetPlusPlus)
+            iou_gan_firststage = calculate_iou(true_mask, output_Gan_FirstStage)
             
             iou_list_GAN.append(iou_gan)
             iou_list_Unet.append(iou_unet)
@@ -517,6 +556,7 @@ class Evaluation():
             # iou_list_DeeplabV3.append(iou_deeplabv3)
             iou_list_DeeplabV3Plus.append(iou_deeplabv3plus)
             iou_list_UnetPlusPlus.append(iou_unetplusplus)
+            iou_list_GAN_FirstStage.append(iou_gan_firststage)
 
 
             # dice metric list
@@ -526,8 +566,8 @@ class Evaluation():
             # dice_list_DeeplabV3.append(dice(output_DeeplabV3, true_mask, k = 255))
             dice_list_DeeplabV3Plus.append(dice(output_DeeplabV3Plus, true_mask, k = 255))
             dice_list_UnetPlusPlus.append(dice(output_UnetPlusPlus, true_mask, k = 255))
+            dice_list_GAN_FirstStage.append(dice(output_Gan_FirstStage, true_mask, k = 255))
 
-            # Recall, Precision, F2
 
 
 
@@ -561,6 +601,7 @@ class Evaluation():
         # print("mean continuity based DeeplabV3:", np.nanmean(Continuity_list_DeeplabV3), "std:", np.nanstd(Continuity_list_DeeplabV3))
         print("mean continuity based DeeplabV3Plus:", np.nanmean(Continuity_list_DeeplabV3Plus), "std:", np.nanstd(Continuity_list_DeeplabV3Plus))
         print("mean continuity based UnetPlusPlus:", np.nanmean(Continuity_list_UnetPlusPlus), "std:", np.nanstd(Continuity_list_UnetPlusPlus))
+        print("mean continuity based GAN_FirstStage:", np.nanmean(Continuity_list_GAN_FirstStage), "std:", np.nanstd(Continuity_list_GAN_FirstStage))
       
 
         print("mean TipError based GAN:", np.nanmean(TipError_list_GAN), "std:", np.nanstd(TipError_list_GAN))
@@ -569,6 +610,7 @@ class Evaluation():
         # print("mean TipError based DeeplabV3:", np.nanmean(TipError_list_DeeplabV3), "std:", np.nanstd(TipError_list_DeeplabV3))
         print("mean TipError based DeeplabV3Plus:", np.nanmean(TipError_list_DeeplabV3Plus), "std:", np.nanstd(TipError_list_DeeplabV3Plus))
         print("mean TipError based UnetPlusPlus:", np.nanmean(TipError_list_UnetPlusPlus), "std:", np.nanstd(TipError_list_UnetPlusPlus))
+        print("mean TipError based GAN_FirstStage:", np.nanmean(TipError_list_GAN_FirstStage), "std:", np.nanstd(TipError_list_GAN_FirstStage))
 
         print("mean Angle based GAN:", np.nanmean(Angle_list_GAN), "std:", np.nanstd(Angle_list_GAN))
         print("mean Angle based Unet:", np.nanmean(Angle_list_Unet), "std:", np.nanstd(Angle_list_Unet))
@@ -576,6 +618,7 @@ class Evaluation():
         # print("mean Angle based DeeplabV3:", np.nanmean(Angle_list_DeeplabV3), "std:", np.nanstd(Angle_list_DeeplabV3))
         print("mean Angle based DeeplabV3Plus:", np.nanmean(Angle_list_DeeplabV3Plus), "std:", np.nanstd(Angle_list_DeeplabV3Plus))
         print("mean Angle based UnetPlusPlus:", np.nanmean(Angle_list_UnetPlusPlus), "std:", np.nanstd(Angle_list_UnetPlusPlus))
+        print("mean Angle based GAN_FirstStage:", np.nanmean(Angle_list_GAN_FirstStage), "std:", np.nanstd(Angle_list_GAN_FirstStage))
 
         # precision, recall, F2
         for metric in metrics:
@@ -591,6 +634,7 @@ class Evaluation():
                 'AttUnet': {'dice': dice_list_AttUnet, 'iou': iou_list_AttUnet, 'Recall':  models_metrics['AttUnet']['Recall'], 'Precision':  models_metrics['AttUnet']['Precision'], 'F2':  models_metrics['AttUnet']['F2'], 'Continuity': Continuity_list_AttUnet, 'TipError': TipError_list_AttUnet, 'Angle': Angle_list_AttUnet},  
                 'DeeplabV3Plus': {'dice': dice_list_DeeplabV3Plus, 'iou': iou_list_DeeplabV3Plus, 'Recall':  models_metrics['DeeplabV3Plus']['Recall'], 'Precision':  models_metrics['DeeplabV3Plus']['Precision'], 'F2':  models_metrics['DeeplabV3Plus']['F2'], 'Continuity': Continuity_list_DeeplabV3Plus, 'TipError': TipError_list_DeeplabV3Plus, 'Angle': Angle_list_DeeplabV3Plus},
                 'UnetPlusPlus': {'dice': dice_list_UnetPlusPlus, 'iou': iou_list_UnetPlusPlus, 'Recall':  models_metrics['UnetPlusPlus']['Recall'], 'Precision':  models_metrics['UnetPlusPlus']['Precision'], 'F2':  models_metrics['UnetPlusPlus']['F2'], 'Continuity': Continuity_list_UnetPlusPlus, 'TipError': TipError_list_UnetPlusPlus, 'Angle': Angle_list_UnetPlusPlus},
+                'GAN_FirstStage': {'dice': dice_list_GAN_FirstStage, 'iou': iou_list_GAN_FirstStage, 'Recall':  models_metrics['GAN_FirstStage']['Recall'], 'Precision':  models_metrics['GAN_FirstStage']['Precision'], 'F2':  models_metrics['GAN_FirstStage']['F2'], 'Continuity': Continuity_list_GAN_FirstStage, 'TipError': TipError_list_GAN_FirstStage, 'Angle': Angle_list_GAN_FirstStage},
 
             }
 
@@ -632,6 +676,6 @@ class Evaluation():
         
 
 if __name__ == "__main__":
-    test_mode = "4" # 1/2 compounding 3/4 insertion 
+    test_mode = "2" # 1/2 compounding 3/4 insertion 
     eval = Evaluation(mode = test_mode)
     eval.start()
