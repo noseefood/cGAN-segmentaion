@@ -1,16 +1,15 @@
 import cv2
 import numpy as np
+# import collections
 from scipy.spatial.distance import euclidean
 from skimage.morphology import skeletonize
-from skimage.measure import label, regionprops
 from sklearn.decomposition import PCA
-from scipy.ndimage import convolve
 from sklearn.linear_model import LinearRegression
 from scipy.spatial.distance import directed_hausdorff
 
-
 image_H = 50
 image_W = 51.3
+buffer_number = 50
 
 # Metrics
 def dice(pred_mask, gt_mask, k = 1):
@@ -54,51 +53,27 @@ def calculate_metrics(mask, prediction):
     return recall, precision, F2
 
 
-class Calculate_Error():
-        
-    ''''Use the pred and mask to calculate the error(continuity and tip error))'''
+class Post_processing():
+    '''
+    Post-processing the pred image, every model has its own post-processing object.
+    It has the following functions:
+        1. Basic outlier_filter: According the colinear principle[OK]
+        2. Enhandced outlier_filter: According the previous frames[Not OK]
+            principle: in needle insertion, the other part of the image is static, only the needle part is moving,
+                        so we can use the previous frames to filter the needle part.
+            two prequesites: 1. this box is very small
+                             2. this box stays in the same position for a very long time
+    '''
+    def __init__(self, pred = None, mdoel_name = None):
+        self.model_Name = mdoel_name
+        # self.buffer_ = collections.deque(maxlen=buffer_number) # append
 
-    def __init__(self):
-
-
-        pass
-
-    def Calculate_TipError(self, pred = None, mask = None, method = 'canny'):
-
-        '''To calculate the continuity, don't use filter_image'''
-        _, exist_seg = self.outlier_filter(pred, mask) # 
-
-        '''To calculate the tip error/angle error'''
-        # needs some filter(outlier??)
-        # filter_image_Tip = self.outlier_filter_outlier(pred)
-        filter_image_Tip = pred
-        
-
-        if exist_seg == False:
-            # only when the mask has a segment, the tip error/angle error start to calculate!!
-            return float('NaN'), float('NaN')
-        else:
-
-            ang_pred, tip_pred = self.Calculate_TipOrientation(filter_image_Tip, method)
-            ang_mask, tip_mask = self.Calculate_TipOrientation(mask, method)
-
-
-            if np.isnan(ang_pred) or np.isnan(ang_mask):
-                # if in this stage the angle is nan, it means the model failed to predict the angle
-                return float('NaN'), float('NaN')
-            
-            else:
-
-                # 计算角度误差(都是与水平的夹角)
-                angle_error = abs(ang_pred - ang_mask)
-
-                # 计算位置误差
-                tip_error = euclidean(tip_pred, tip_mask)
-
-                return angle_error, tip_error
-
-    def outlier_filter_outlier(self, pred, range = 10):
-        '''According the pred structure, only extract the near needle part from the pred image'''
+    def basic_outlier_filter(self, pred, range = 5):
+        '''
+        According the pred structure, only extract the near needle part from the pred image
+        pred: the pred image
+        range: the range of merged rectangle width
+        '''
         # Find contours in the mask
         contours, _ = cv2.findContours(pred, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         filtered_pred = None
@@ -132,7 +107,6 @@ class Calculate_Error():
             center, size, angle = rect
 
             # Convert size to integer
-            
             size = (int(size[0]) , int(size[1]) * range)
 
             # Get the four points of the rectangle
@@ -140,27 +114,29 @@ class Calculate_Error():
             box = cv2.boxPoints(rect)
             box = np.int0(box)
 
-            # Create an all black image
+            # filter
             mask_outside = np.zeros_like(pred)
-
-            # Fill the area inside the rectangle with white
             cv2.fillPoly(mask_outside, [box], 255)
-
-            # Bitwise-and with the pred image
             filtered_pred = cv2.bitwise_and(pred, mask_outside)
 
-            cv2.imshow("outlier filtered", filtered_pred)
+            # cv2.imshow("outlier filtered" + self.model_Name, filtered_pred)
 
         return filtered_pred
 
+
     def are_collinear(self, rect1, rect2, tolerance=3):
-        # center, size, angle = rect
+        '''
+        Check if two rectangles are collinear
+        rect1/2: (center, size, angle)
+        tolerance: the tolerance of the angle difference
+        '''
         # Calculate the difference in angles  
         angle_diff = abs(rect1[2] - rect2[2])
         
         # Calculate the slope and y-intercept of the line between the centers
         x_diff = rect2[0][0] - rect1[0][0]
         y_diff = rect2[0][1] - rect1[0][1]
+
         if abs(x_diff) < tolerance:
             slope = float('inf')
         else:
@@ -175,12 +151,66 @@ class Calculate_Error():
         # 1. Check if the difference in angles is within the tolerance
         # 2. Check if the line is collinear with the rectangle
         return angle_diff < tolerance and abs(line_angle - rect1[2]) < tolerance
+    
+
+    def enhandced_outlier_filter(self, pred):
+
+        pass
+
+
+
+class Calculate_Error():
+    '''
+    Using the pred to calculate the error(angle error and tip error)
+    Using the pred and mask to calculate the continuity
+    '''
+
+    def __init__(self, colinear_processing = True):
+         
+        self.post_processing = Post_processing()
+        self.colinear_processing = colinear_processing
+
+    def Calculate_TipError(self, pred = None, mask = None, method = 'canny'):
+
+        # Only use mask as start signal
+        _, exist_seg = self.outlier_filter(pred, mask) # 
+
+
+        # Post-processing to filter the outlier
+        if self.colinear_processing:
+            filter_img = self.post_processing.basic_outlier_filter(pred)
+        else:
+            filter_img = pred
+        
+
+        if exist_seg == False:
+            # only when the mask has a segment, the tip error/angle error start to calculate!!
+            return float('NaN'), float('NaN')
+        
+        else:
+            ang_pred, tip_pred = self.Calculate_TipOrientation(filter_img, method)
+            ang_mask, tip_mask = self.Calculate_TipOrientation(mask, method)
+
+
+            if np.isnan(ang_pred) or np.isnan(ang_mask):
+                # if in this stage the angle is nan, it means the model failed to predict the angle
+                return float('NaN'), float('NaN')
+
+            else:
+                # 计算角度误差(都是与水平的夹角)
+                angle_error = abs(ang_pred - ang_mask)
+
+                # 计算位置误差
+                tip_error = euclidean(tip_pred, tip_mask)
+
+
+                return angle_error, tip_error
 
     
     def Calculate_TipOrientation(self, image, method):
         
         if method == 'canny':
-            # 边缘检测
+            # edge detection
             edges = cv2.Canny(image, 250, 255)
 
             # 提取边缘点的坐标
@@ -189,7 +219,6 @@ class Calculate_Error():
             # print(points)
 
             if points.size == 0 :
-
                 return float('NaN'), (float('NaN'), float('NaN'))
                 print("Empty points !")
             
@@ -253,23 +282,23 @@ class Calculate_Error():
 
 
     def Calculate_Continuity(self, method = 'LineProj', pred = None, mask = None):
-
+        
+        # Posteriori filter using mask, only for analysis of continuity's computation!!!!!!!!1
         filtered_pred, exist_seg = self.outlier_filter(pred, mask) # Continuity calculation 
+
 
         if exist_seg == False:
             return float('NaN')
         else:
             if method == 'Box':
                 return self.Calculate_Continuity_Box(filtered_pred)
-            elif method == 'Projection':
-                return self.Calculate_Continuity_projection(filtered_pred, mask)
             elif method == 'LineProj':
-                return self.Calculate_Continuity_LineProj(filtered_pred, mask)
+                return self.Calculate_Continuity_LineProj(filtered_pred)
             elif method == 'Hausdorff':
                 return self.Calculate_Continuity_Hausdorff(filtered_pred, mask)
             
 
-    def Calculate_Continuity_LineProj(self, image, mask):
+    def Calculate_Continuity_LineProj(self, image):
 
         '''Calculate the continuity of the needle by projecting the needle to the line'''
 
@@ -314,14 +343,10 @@ class Calculate_Error():
             # 计算连续性指标
             continuity = 1 - (black_count / size[0]) if size[0] > 0 else 1
 
-        # all_points = np.vstack([cnt.reshape(-1, 2) for cnt in contours]) # bug: if contours is empty, it will raise an error
         else:
             continuity = 0
 
-
         return continuity
-
-            
 
     def Calculate_Continuity_Box(self, pred):
 
@@ -352,14 +377,6 @@ class Calculate_Error():
 
         return continuity_index
 
-    def extract_feature_points(self, image):
-        # 这里以骨架化为例提取特征点
-        skeleton = cv2.ximgproc.thinning(image)
-        cv2.imshow("Skeleton", skeleton)
-        cv2.waitKey(0)
-        y, x = np.nonzero(skeleton)
-        return np.column_stack((x, y))
-
     def Calculate_Continuity_Hausdorff(self, pred, mask):
         # 提取特征点
         points_mask = self.extract_feature_points(mask)
@@ -373,66 +390,20 @@ class Calculate_Error():
         continuity_score = hausdorff_dist
 
         return continuity_score
-    
 
-    def outlier_filter_Tip(self, pred, mask, range = 5):
-
-        '''According the previous frames, only extract the needle part from the predictions image'''
-
-        # Find contours in the mask
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        exist_seg = False
-        filtered_pred = None
-
-        if len(contours) != 0:
-
-            # Find the rotated rectangle for each contour
-            rects = [cv2.minAreaRect(cnt) for cnt in contours]
-
-            # For simplicity, let's take the first rectangle
-            rect = rects[0]
-
-            # Get the center, size, and angle from the rectangle
-            center, size, angle = rect
-
-            # Convert size to integer
-            
-            size = (int(size[0]) , int(size[1]) * range)
-
-            # Get the four points of the rectangle
-            rect = (center, size, angle)
-            box = cv2.boxPoints(rect)
-            box = np.int0(box)
-
-            # Create an all black image
-            mask_outside = np.zeros_like(pred)
-
-            # Fill the area outside the rectangle with white
-            cv2.fillPoly(mask_outside, [box], 255)
-
-            # Bitwise-and with the pred image
-            filtered_pred = cv2.bitwise_and(pred, mask_outside)
-
-            # Display the result image
-            # result_BGR = cv2.cvtColor(filtered_pred, cv2.COLOR_GRAY2BGR)
-            # cv2.polylines(filtered_pred, [box], True, (0, 255, 0), 2)
-            # cv2.imshow("Result", result_BGR)
-            # cv2.imshow("Pred", pred)
-            # cv2.imshow("Mask", mask)
-            # cv2.waitKey(0)
-
-            # safe check
-            exist_seg = True
-
-            
-        return filtered_pred, exist_seg
-
-
+    def extract_feature_points(self, image):
+        # 这里以骨架化为例提取特征点
+        skeleton = cv2.ximgproc.thinning(image)
+        cv2.imshow("Skeleton", skeleton)
+        cv2.waitKey(0)
+        y, x = np.nonzero(skeleton)
+        return np.column_stack((x, y))
 
     def outlier_filter(self, pred, mask, range = 5):
-
-        '''According the mask, only extract the needle part from the pred image'''
-
+        '''
+        According the mask, only extract the needle part from the pred image
+        Only mask used in continuity calculation
+        '''
         # Find contours in the mask
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         exist_seg = False
@@ -468,131 +439,10 @@ class Calculate_Error():
             # Bitwise-and with the pred image
             filtered_pred = cv2.bitwise_and(pred, mask_outside)
 
-            # Display the result image
-            # result_BGR = cv2.cvtColor(filtered_pred, cv2.COLOR_GRAY2BGR)
-            # cv2.polylines(filtered_pred, [box], True, (0, 255, 0), 2)
-            # cv2.imshow("Result", result_BGR)
-            # cv2.imshow("Pred", pred)
-            # cv2.imshow("Mask", mask)
-            # cv2.waitKey(0)
-
             # safe check
             exist_seg = True
-
             
         return filtered_pred, exist_seg
     
-
-    def visualize_principal_axis_and_projection(mask, prediction, axis, projected_points):
-
-        """绘制主轴方向和投影点"""
-
-        # 创建一个RGB图像用于可视化
-        vis_image = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-
-        # 绘制主轴方向
-        rows, cols = mask.shape
-        center = np.mean(np.argwhere(mask > 0), axis=0).astype(np.int32)  # 使用mask的重心作为中心点
-        axis_end = (int(center[1] + axis[0] * 100), int(center[0] + axis[1] * 100))  # 伸展轴以便可视化
-        cv2.arrowedLine(vis_image, (center[1], center[0]), axis_end, (255, 0, 0), 2)
-
-        # 绘制投影点
-        for projection in projected_points:
-            x, y = int(center[1] + projection * axis[0]), int(center[0] + projection * axis[1])
-            cv2.circle(vis_image, (x, y), 1, (0, 255, 0), -1)  # 绿色点
-
-        return vis_image
-        
-    def Calculate_Continuity_projection(self, pred, mask):
-
-        # pred_BGR = cv2.cvtColor(pred, cv2.COLOR_GRAY2BGR) # for visualization
-
-        # 确定 mask 图像中线的主轴方向
-        mask_contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        mask_contour = max(mask_contours, key=cv2.contourArea)
-        pca = PCA(n_components=2)
-        pca.fit(mask_contour.reshape(-1, 2))
-
-        # 得到主轴方向的单位向量
-        principal_axis = pca.components_[0]
-
-    # 将预测结果投影到主轴方向
-        prediction_contours, _ = cv2.findContours(pred, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        projected_points = set()
-        for contour in prediction_contours:
-            for point in contour.reshape(-1, 2):
-                projection = np.dot(point, principal_axis)
-                projected_points.add(projection)
-
-        # # 可视化主轴方向和投影点
-        # vis_image = visualize_principal_axis_and_projection(mask, pred, principal_axis, projected_points)
-        # cv2.imshow("Calculate_Continuity", vis_image)
-
-        # 计算投影长度和覆盖长度
-        if projected_points:
-
-            projected_intervals = self.get_projected_intervals(projected_points, principal_axis, pca.mean_)
-
-            # 计算覆盖的区间长度
-            covered_length = self.calculate_covered_length(projected_intervals)
-            
-
-            # 计算总投影长度 (从 projected_intervals 列表中找出具有最大最小结束坐标的区间（Interval）)
-            projection_length = max(projected_intervals, key=lambda interval: interval[1])[1] - \
-                        min(projected_intervals, key=lambda interval: interval[0])[0]
-
-            # 计算连续性指标
-            continuity_index = covered_length / projection_length if projection_length > 0 else 1
-        else:
-            continuity_index = 1
-
-        return continuity_index
-
-    def get_projected_intervals(self, projected_points, axis, center, pixel_length=2):
-        # 将每个点投影到主轴上的小区间
-        intervals = []
-        for point in projected_points:
-            projection = np.dot(point - center, axis)
-            intervals.append((projection - pixel_length / 2, projection + pixel_length / 2))
-
-        return self.merge_intervals(intervals)
-
-    def merge_intervals(self, intervals):
-        # 合并重叠的区间
-        sorted_intervals = sorted(intervals, key=lambda x: x[0])
-        merged = []
-        for interval in sorted_intervals:
-            if not merged or merged[-1][1] < interval[0]:
-                merged.append(interval)
-            else:
-                merged[-1] = (merged[-1][0], max(merged[-1][1], interval[1]))
-
-        return merged
-
-    def calculate_covered_length(self, intervals):
-        # 计算所有区间的总长度
-        return sum(interval[1] - interval[0] for interval in intervals)
-            
-
-
-
-# Load the image
-mask_path = './data/test_dataset/2/masks/273.png'
-image_path = './data/test_dataset/2/images/273.png'
-
-pred_path = './data/sampleOut_GAN/73.png' # GAN sample
-# pred_path = './data/sampleOut_Unet/73.png' # UNet sample
-pred = cv2.imread(pred_path, cv2.IMREAD_GRAYSCALE)
-mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
-
-mask = cv2.normalize(mask, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
-pred = cv2.normalize(pred, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
-
-calculate_object = Calculate_Error()
-
-print(calculate_object.Calculate_Continuity(method = 'Projection', pred = pred, mask = mask))
-
-
-
 
 

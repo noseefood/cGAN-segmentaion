@@ -120,6 +120,16 @@ def calculate_dist_center(pred):
 
             return distance
 
+def outlier_removal_statistics(pred, model="GAN"):
+
+    '''Achieveing the outlier removal by using the statistics method, basic idea is that if a contour stay in the same position 
+    for a long time, it should be  a outlier. It is acceptable in our needle insertion task, because the needle should move forwards
+    not stay in the same position.'''
+    
+
+
+    pass
+
 
 
 def outlier_filter_Tip(pred, range = 5, model="GAN"):
@@ -481,24 +491,24 @@ for i, (input,mask) in enumerate(zip(imgs, masks)):
     recall, precision, F2 = calculate_metrics(mask, output)
     print("recall:", recall, "precision:", precision, "F2:", F2)
 
-    cv2.imshow("output_Deeplab", output)
-    cv2.imshow("output_GAN", output_2)
-    cv2.imshow("output_Unet", output_3)
-    cv2.imshow("output_Unet++", output_4)
-    cv2.imshow("output_FirstStage", output_5)
-    cv2.imshow("output_AttentionUnet", output_6)
+    # cv2.imshow("output_Deeplab", output)
+    # cv2.imshow("output_GAN", output_2)
+    # cv2.imshow("output_Unet", output_3)
+    # cv2.imshow("output_Unet++", output_4)
+    # cv2.imshow("output_FirstStage", output_5)
+    # cv2.imshow("output_AttentionUnet", output_6)
 
     cv2.imshow("mask", mask)
 
 
     # outlier removal test
 
-    # outlier_filter_Tip(output, 10, "Deeplab")
-    # outlier_filter_Tip(output_2, 10, "GAN")
-    # outlier_filter_Tip(output_3, 10, "Unet")
-    # outlier_filter_Tip(output_4, 10, "Unet++")
-    # outlier_filter_Tip(output_5, 10, "FirstStage")
-    # outlier_filter_Tip(output_6, 10, "AttentionUnet")
+    outlier_filter_Tip(output, 10, "Deeplab")
+    outlier_filter_Tip(output_2, 10, "GAN")
+    outlier_filter_Tip(output_3, 10, "Unet")
+    outlier_filter_Tip(output_4, 10, "Unet++")
+    outlier_filter_Tip(output_5, 10, "FirstStage")
+    outlier_filter_Tip(output_6, 10, "AttentionUnet")
 
 
 
