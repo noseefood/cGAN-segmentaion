@@ -9,7 +9,10 @@ from scipy.spatial.distance import directed_hausdorff
 
 image_H = 50
 image_W = 51.3
-buffer_number = 50
+pixel_H = 657 # ratio 0.076 mm/pixel
+pixel_W = 671 # ratio 0.078 mm/pixel, average 0.077 mm/pixel
+ratioPixel2mm = 0.077
+# buffer_number = 50
 
 # Metrics
 def dice(pred_mask, gt_mask, k = 1):
@@ -52,6 +55,17 @@ def calculate_metrics(mask, prediction):
 
     return recall, precision, F2
 
+def pixel2mm(pixel):
+    '''
+    Convert the pixel to mm
+    2D US: Depth: 50mm, Width: 51.3mm
+    '''
+    pixel_H = pixel[0]
+    pixel_W = pixel[1]
+    mm_H = pixel_H / image_H * 50
+    mm_W = pixel_W / image_W * 51.3
+
+    return mm_H, mm_H
 
 class Post_processing():
     '''
@@ -157,6 +171,11 @@ class Post_processing():
 
         pass
 
+    def compounding_outlier_filter(self, pred):
+        '''
+        
+        '''
+
 
 
 class Calculate_Error():
@@ -185,26 +204,40 @@ class Calculate_Error():
 
         if exist_seg == False:
             # only when the mask has a segment, the tip error/angle error start to calculate!!
-            return float('NaN'), float('NaN')
+            return float('NaN'), float('NaN'), float('NaN'), pred
         
         else:
             ang_pred, tip_pred = self.Calculate_TipOrientation(filter_img, method)
             ang_mask, tip_mask = self.Calculate_TipOrientation(mask, method)
 
+            dist_img = self.calculate_dist_center(filter_img)
+            dist_mask = self.calculate_dist_center(mask)
+
 
             if np.isnan(ang_pred) or np.isnan(ang_mask):
                 # if in this stage the angle is nan, it means the model failed to predict the angle
-                return float('NaN'), float('NaN')
+                return float('NaN'), float('NaN'), float('NaN'), filter_img
 
             else:
-                # 计算角度误差(都是与水平的夹角)
+                # 计算角度误差(都是与水平的夹角,degree)
                 angle_error = abs(ang_pred - ang_mask)
 
-                # 计算位置误差
+                # 计算位置误差(pixel)
                 tip_error = euclidean(tip_pred, tip_mask)
 
+                # 计算距离误差(for angle error,pixel)
+                frame_center_error = euclidean(dist_img, dist_mask)
+                
+                # 转换为mm
+                tip_error = tip_error * ratioPixel2mm
+                frame_center_error = frame_center_error * ratioPixel2mm
 
-                return angle_error, tip_error
+                # print("angle_error: ", angle_error)
+                # print("tip_error: ", tip_error)
+                # print("frame_center_error: ", frame_center_error)
+                # print("filter_img: ", filter_img)
+
+                return angle_error, tip_error, frame_center_error, filter_img
 
     
     def Calculate_TipOrientation(self, image, method):
@@ -212,32 +245,40 @@ class Calculate_Error():
         if method == 'canny':
             # edge detection
             edges = cv2.Canny(image, 250, 255)
-
-            # 提取边缘点的坐标
-            y, x = np.nonzero(edges)
-            points = np.column_stack((x, y))
-            # print(points)
-
-            if points.size == 0 :
-                return float('NaN'), (float('NaN'), float('NaN'))
-                print("Empty points !")
             
+        if edges is not None:
+
+            if edges.size != 0:
+                
+                # 提取边缘点的坐标
+                y, x = np.nonzero(edges)
+                points = np.column_stack((x, y))
+                # print(points)
+
+                if points.size == 0 :
+                    return float('NaN'), (float('NaN'), float('NaN'))
+                    print("Empty points !")
+                
+                else:
+
+                    # 线性回归拟合
+                    model = LinearRegression()
+                    model.fit(points[:, 0].reshape(-1, 1), points[:, 1])
+
+                    # 计算倾斜角度
+                    slope = model.coef_[0]
+                    angle = np.arctan(slope) * 180 / np.pi
+
+                    # 计算靠右侧的端点
+                    x_sorted = np.sort(points[:, 0])
+                    y_pred = model.predict(x_sorted.reshape(-1, 1))
+                    rightmost_point = (x_sorted[-1], int(y_pred[-1]))
+
+                    return angle, rightmost_point
             else:
-
-                # 线性回归拟合
-                model = LinearRegression()
-                model.fit(points[:, 0].reshape(-1, 1), points[:, 1])
-
-                # 计算倾斜角度
-                slope = model.coef_[0]
-                angle = np.arctan(slope) * 180 / np.pi
-
-                # 计算靠右侧的端点
-                x_sorted = np.sort(points[:, 0])
-                y_pred = model.predict(x_sorted.reshape(-1, 1))
-                rightmost_point = (x_sorted[-1], int(y_pred[-1]))
-
-                return angle, rightmost_point
+                return float('NaN'), (float('NaN'), float('NaN'))
+        else:
+            return float('NaN'), (float('NaN'), float('NaN'))
             
         if method == 'threshold':
             # 提取特征点
@@ -444,5 +485,53 @@ class Calculate_Error():
             
         return filtered_pred, exist_seg
     
+    def calculate_dist_center(self, pred):
+        '''
+        To calcluate the distance between the center of every frame and the line
+        It also can be used to calculate the relative angle between the pred and the mask
+        '''
+
+        edges = cv2.Canny(pred, 250, 255)
+
+        if edges is not None:
+
+            if edges.size != 0:
+
+                # 提取边缘点的坐标
+                y, x = np.nonzero(edges)
+                points = np.column_stack((x, y))
+                slope,intercept = 0, 0
+
+                if points.size != 0 :
+                    # 线性回归拟合
+                    model = LinearRegression()
+                    model.fit(points[:, 0].reshape(-1, 1), points[:, 1])
+
+                    # 计算倾斜角度
+                    slope,intercept = model.coef_[0], model.intercept_
+                    angle = np.arctan(slope) * 180 / np.pi
 
 
+                # Calculate the distance between the center of every frame and the line
+                # Assuming 'image' is your 2D image
+                    
+                # check the image shape
+                if len(pred.shape) == 3:
+                    height, width, _ = pred.shape   
+                else:
+                    height, width = pred.shape
+
+                # Calculate the center pixel coordinates
+                h, k  = height // 2, width // 2
+
+                # Calculate distance from center to the line
+                A = -slope
+                B = 1
+                C = -intercept
+
+                distance = abs(A*h + B*k + C) / np.sqrt(A**2 + B**2)
+
+                return distance
+
+    def Compounding_3D_error(self, pred, true_value):
+        pass

@@ -53,28 +53,7 @@ def remove_small_points(binary_img, threshold_area):
     
     return resMatrix
 
-def are_collinear(rect1, rect2, tolerance=3):
-    # center, size, angle = rect
-    # Calculate the difference in angles  
-    angle_diff = abs(rect1[2] - rect2[2])
-    
-    # Calculate the slope and y-intercept of the line between the centers
-    x_diff = rect2[0][0] - rect1[0][0]
-    y_diff = rect2[0][1] - rect1[0][1]
-    if abs(x_diff) < tolerance:
-        slope = float('inf')
-    else:
-        slope = y_diff / x_diff
 
-    y_intercept = rect1[0][1] - slope * rect1[0][0]
-    
-    # Calculate the angle of the line
-    line_angle = np.degrees(np.arctan(slope)) if slope != float('inf') else 90
-    
-    # Check if the difference in angles is within the tolerance
-    # 1. Check if the difference in angles is within the tolerance
-    # 2. Check if the line is collinear with the rectangle
-    return angle_diff < tolerance and abs(line_angle - rect1[2]) < tolerance
 
 
 def calculate_dist_center(pred):
@@ -120,6 +99,9 @@ def calculate_dist_center(pred):
 
             return distance
 
+
+
+
 def outlier_removal_statistics(pred, model="GAN"):
 
     '''Achieveing the outlier removal by using the statistics method, basic idea is that if a contour stay in the same position 
@@ -131,6 +113,29 @@ def outlier_removal_statistics(pred, model="GAN"):
     pass
 
 
+
+def are_collinear(rect1, rect2, tolerance=3):
+    # center, size, angle = rect
+    # Calculate the difference in angles  
+    angle_diff = abs(rect1[2] - rect2[2])
+    
+    # Calculate the slope and y-intercept of the line between the centers
+    x_diff = rect2[0][0] - rect1[0][0]
+    y_diff = rect2[0][1] - rect1[0][1]
+    if abs(x_diff) < tolerance:
+        slope = float('inf')
+    else:
+        slope = y_diff / x_diff
+
+    y_intercept = rect1[0][1] - slope * rect1[0][0]
+    
+    # Calculate the angle of the line
+    line_angle = np.degrees(np.arctan(slope)) if slope != float('inf') else 90
+    
+    # Check if the difference in angles is within the tolerance
+    # 1. Check if the difference in angles is within the tolerance
+    # 2. Check if the line is collinear with the rectangle
+    return angle_diff < tolerance and abs(line_angle - rect1[2]) < tolerance
 
 def outlier_filter_Tip(pred, range = 5, model="GAN"):
 
@@ -411,7 +416,8 @@ class NetworkInference_GAN_FirstStage():
     '''
     def __init__(self, mode = "pork"):
 
-        dir_checkpoint_GAN = './test_model/FirstStage.pth'  # from first stage only using focal loss
+        # dir_checkpoint_GAN = './test_model/FirstStage.pth'  # from first stage only using focal loss
+        dir_checkpoint_GAN = './test_model/best_in6200_FirstStage.pth'
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -491,24 +497,24 @@ for i, (input,mask) in enumerate(zip(imgs, masks)):
     recall, precision, F2 = calculate_metrics(mask, output)
     print("recall:", recall, "precision:", precision, "F2:", F2)
 
-    # cv2.imshow("output_Deeplab", output)
-    # cv2.imshow("output_GAN", output_2)
-    # cv2.imshow("output_Unet", output_3)
-    # cv2.imshow("output_Unet++", output_4)
-    # cv2.imshow("output_FirstStage", output_5)
-    # cv2.imshow("output_AttentionUnet", output_6)
+    cv2.imshow("output_Deeplab", output)
+    cv2.imshow("output_GAN", output_2)
+    cv2.imshow("output_Unet", output_3)
+    cv2.imshow("output_Unet++", output_4)
+    cv2.imshow("output_FirstStage", output_5)
+    cv2.imshow("output_AttentionUnet", output_6)
 
     cv2.imshow("mask", mask)
 
 
     # outlier removal test
 
-    outlier_filter_Tip(output, 10, "Deeplab")
-    outlier_filter_Tip(output_2, 10, "GAN")
-    outlier_filter_Tip(output_3, 10, "Unet")
-    outlier_filter_Tip(output_4, 10, "Unet++")
-    outlier_filter_Tip(output_5, 10, "FirstStage")
-    outlier_filter_Tip(output_6, 10, "AttentionUnet")
+    # outlier_filter_Tip(output, 10, "Deeplab")
+    # outlier_filter_Tip(output_2, 10, "GAN")
+    # outlier_filter_Tip(output_3, 10, "Unet")
+    # outlier_filter_Tip(output_4, 10, "Unet++")
+    # outlier_filter_Tip(output_5, 10, "FirstStage")
+    # outlier_filter_Tip(output_6, 10, "AttentionUnet")
 
 
 

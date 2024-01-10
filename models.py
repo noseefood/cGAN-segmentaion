@@ -44,7 +44,10 @@ class NetworkInference_UnetPLUSPLUS():
             probs = output.squeeze(0) # squeeze压缩维度 torch.Size([1, 512, 512])
 
             if tf is not None:
-                self.imgs_postprocess = tf
+                if isinstance(tf, tuple):
+                    self.imgs_postprocess = (Compose([Activations(sigmoid=True),Resize(tf), AsDiscrete(threshold=0.5)]) )
+                else:
+                    self.imgs_postprocess = tf
 
             probs = self.imgs_postprocess(probs.cpu()) # 重新拉伸到原来的大小
             full_mask = probs.squeeze().cpu().numpy() # return in cpu  # 
@@ -251,7 +254,8 @@ class NetworkInference_GAN_FirstStage():
     '''
     def __init__(self, mode = "pork"):
 
-        dir_checkpoint_GAN = './test_model/FirstStage.pth'  # from first stage only using focal loss
+        # dir_checkpoint_GAN = './test_model/FirstStage.pth'  # from first stage only using focal loss
+        dir_checkpoint_GAN = './test_model/best_in6200_FirstStage.pth'
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
