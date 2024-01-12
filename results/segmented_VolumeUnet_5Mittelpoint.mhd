@@ -1,0 +1,13 @@
+ObjectType = Image
+NDims = 3
+BinaryData = True
+BinaryDataByteOrderMSB = False
+CompressedData = False
+TransformMatrix = 0.99999800000000005 0.00209363 -5.6651899999999999e-05 -2.6318200000000002e-05 -0.0144858 -0.99989499999999998 0.0020942299999999999 -0.99989300000000003 0.014485700000000001
+Offset = 577.65499999999997 3.1671200000000002 191.01900000000001
+CenterOfRotation = 0 0 0
+AnatomicalOrientation = RSP
+ElementSpacing = 0.12 0.12 0.12
+DimSize = 437 418 67
+ElementType = MET_UCHAR
+ElementDataFile = segmented_VolumeUnet_5Mittelpoint.raw

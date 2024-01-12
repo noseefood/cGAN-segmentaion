@@ -11,8 +11,9 @@ from Metric_cal import Post_processing
 import open3d as o3d
 import pyransac3d as pyrsc
 
-using_colinear_filter = True
+using_colinear_filter = False
 debug_flag = True
+mirror_img = True   
 
 
 class VoxelSeg():
@@ -66,20 +67,31 @@ class VoxelSeg():
             slice_filter.SetIndex([0, 0, z])
             slice_image = slice_filter.Execute(image) # itk image
 
+
             # slice
             img = sitk.GetArrayFromImage(slice_image)
             size_1, size_2 = img.shape
             resize_tf = (size_1, size_2)
+            cv2.imshow("original", img)
+
+            # # mirror
+            # if mirror_img:
+            #     img = cv2.flip(img, 1)
+            img = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U) # 0-1 -> 0-255
             # cv2.imshow("original", img)
+            
 
             # inference
             imgs_postprocess = (Compose([Activations(sigmoid=True),Resize(resize_tf), AsDiscrete(threshold=0.5)]) )
             output = self.net.inference(img, imgs_postprocess)
             output = cv2.normalize(output, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U) # 0-1 -> 0-255
 
+            # cv2.imshow("segmented", output)
+            cv2.waitKey(1)
+
             # post processing
             if using_colinear_filter:
-                output = self.post_processing.post_processing(output)
+                output = self.post_processing.basic_outlier_filter(output)
 
             if self.method == "RANSAC":
                 self.voxelImg_Seg[z,:,:] = output # slice repalce
@@ -100,17 +112,22 @@ class VoxelSeg():
     def mittelpoint(self, input):
         """input: single segmented image(0-255)"""
         """Mittelpoint method kernel"""
-        # cv2.imshow("test", input)
-        # cv2.waitKey(5)
         h, w = input.shape  # one channel
         blank_image = np.zeros((h, w), np.uint8)
 
         cnts = cv2.findContours(input, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
         if len(cnts) != 0:
-            cnt = sorted(cnts, key=cv2.contourArea, reverse=True)[0]  # only extract the max area contour,only one contour  
-            x,y,w,h = cv2.boundingRect(cnt)
-            cv2.circle(blank_image, (x+w//2,y+h//2), radius=1, color=(255,255,255), thickness=2) # need to remove segmentaion outlier and not write in the same image with RANSAC 
+            # '''只使用最大的轮廓'''
+            # cnt = sorted(cnts, key=cv2.contourArea, reverse=True)[0]  # only extract the max area contour,only one contour 
+            # x,y,w,h = cv2.boundingRect(cnt)
+            # cv2.circle(blank_image, (x+w//2,y+h//2), radius=1, color=(255,255,255), thickness=2) # need to remove segmentaion outlier and not write in the same image with RANSAC 
+            
+            """!!!!!!!!!!!注意,这里实际上应该设置为遍历所有的cnt,防止出现局部的误分割导致的needle提取错误!!!!!!!!!!!""" 
+            cnts = sorted(cnts, key=cv2.contourArea, reverse=True)
+            for cnt in cnts:
+                x,y,w,h = cv2.boundingRect(cnt)
+                cv2.circle(blank_image, (x+w//2,y+h//2), radius=1, color=(255,255,255), thickness=2)
 
         return blank_image
     
@@ -168,7 +185,10 @@ class ExtractModul():
         
 
         
-    def extract(self):
+    def extract(self, analysis=False):
+
+        '''open3d_pcd在这里是已经被filter过了的点云(statistical_outlier_removal或者DBSCAN)'''
+        
         # line ransac(pyRANSAC-3D)
         points = np.asarray(self.open3d_pcd.points)
 
@@ -179,48 +199,161 @@ class ExtractModul():
         # two representative points on the needle-line
         slope = A
         interception = (B[0], B[1], B[2])
-        point_1, point_2 = self.get_BoundPoints(interception, slope, self.voxel_range)  # Along the needle-line to get the two points on the bound surfaces of Volume(Sweep); self.voxel_range) in z,y,x
-        print("slope, interception of Needle-line:" , slope, interception)
-        print("Extracted two points(point_1, point_2): ", point_1, point_2)
 
-        # visualization in open3d
-        plane = self.open3d_pcd.select_by_index(inliers).paint_uniform_color([1, 0, 0])
-        plane.paint_uniform_color([0,0,1])
+        if analysis == True:
+            # for analysis
+            '''
+            slope : 3D slope of the line (angle) [1,3]
+            '''
+            Tip_point = self.extract_needle_tip(inliers, slope) # list
+            print("Tip_point: ", Tip_point)
+            
+            degrees = self.slope_to_degrees(slope)
+            print("degrees: ", degrees)
 
-        R = pyrsc.get_rotationMatrix_from_vectors([0, 0, 1], A)
-        mesh_cylinder = o3d.geometry.TriangleMesh.create_cylinder(radius=1, height=1000)
-        mesh_cylinder.compute_vertex_normals()
-        mesh_cylinder.paint_uniform_color([1, 0, 0])
-        mesh_cylinder = mesh_cylinder.rotate(R, center=[0, 0, 0])
-        mesh_cylinder = mesh_cylinder.translate((B[0], B[1], B[2]))
-        mesh_cylinder.paint_uniform_color([0,1,0])
 
-        point_1_open3d = self.create_sphere_at_xyz(point_1)  
-        point_2_open3d = self.create_sphere_at_xyz(point_2)
-        origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=20, origin=[0, 0, 0]) # frame 坐标点[x,y,z]对应R，G，B颜色
+
+
+            return Tip_point, degrees
+
+        else:
+            # for experiment
+            point_1, point_2 = self.get_BoundPoints(interception, slope, self.voxel_range)  # Along the needle-line to get the two points on the bound surfaces of Volume(Sweep); self.voxel_range) in z,y,x
+            # print("slope, interception of Needle-line:" , slope, interception)
+            # print("Extracted two points(point_1, point_2): ", point_1, point_2)
+
+            # visualization in open3d
+            plane = self.open3d_pcd.select_by_index(inliers).paint_uniform_color([1, 0, 0])
+            plane.paint_uniform_color([0,0,1])
+
+            R = pyrsc.get_rotationMatrix_from_vectors([0, 0, 1], A)
+            mesh_cylinder = o3d.geometry.TriangleMesh.create_cylinder(radius=1, height=1000)
+            mesh_cylinder.compute_vertex_normals()
+            mesh_cylinder.paint_uniform_color([1, 0, 0])
+            mesh_cylinder = mesh_cylinder.rotate(R, center=[0, 0, 0])
+            mesh_cylinder = mesh_cylinder.translate((B[0], B[1], B[2]))
+            mesh_cylinder.paint_uniform_color([0,1,0])
+
+            point_1_open3d = self.create_sphere_at_xyz(point_1)  
+            point_2_open3d = self.create_sphere_at_xyz(point_2)
+            origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=20, origin=[0, 0, 0]) # frame 坐标点[x,y,z]对应R，G，B颜色
+
+            if debug_flag:
+                o3d.visualization.draw_geometries([self.open3d_pcd, plane, mesh_cylinder, point_1_open3d, point_2_open3d, origin])
+
+            return point_1, point_2
+    
+    def extract_needle_tip(self, inliers, slope):
+        '''
+        `inliers`: Inlier's index from the original point cloud. `np.array (1, M)`
+        '''
+
+        pcd_inInlier = self.open3d_pcd.select_by_index(inliers)
+        points = np.asarray(pcd_inInlier.points)
+
+        tip_index = np.argmax(points[:, 1])
+
+        point_tip = points[tip_index] # list [x,y,z]
+        # print("tip_index: ", point_tip) 
+
+        # visualization 
+        point_tip_o3d = self.create_sphere_at_xyz(point_tip) 
 
         if debug_flag:
-            o3d.visualization.draw_geometries([self.open3d_pcd, plane, mesh_cylinder, point_1_open3d, point_2_open3d, origin])
+            origin = o3d.geometry.TriangleMesh.create_coordinate_frame(size=20, origin=[0, 0, 0]) # frame 坐标点[x,y,z]对应R，G，B颜色
+            o3d.visualization.draw_geometries([self.open3d_pcd, point_tip_o3d, origin, pcd_inInlier])
 
-        # extract the needle tip
-        point_tip = self.extract_needle_tip(points)
+        return point_tip
+    
+        
+    def slope_to_degrees(self, slope):
+        # Normalize the slope vector
+        slope = slope / np.linalg.norm(slope)
 
-        return point_1, point_2
+        # Define the reference vectors for each axis
+        x_ref = np.array([1, 0, 0])
+        y_ref = np.array([0, 1, 0])
+        z_ref = np.array([0, 0, 1])
+
+        # Calculate the angle with respect to each axis
+        x_angle = np.abs(np.arccos(np.clip(np.dot(slope, x_ref), -1.0, 1.0)) * 180 / np.pi)
+        y_angle = np.abs(np.arccos(np.clip(np.dot(slope, y_ref), -1.0, 1.0)) * 180 / np.pi)
+        z_angle = np.abs(np.arccos(np.clip(np.dot(slope, z_ref), -1.0, 1.0)) * 180 / np.pi)
+
+        # Limit the angles to [0, 90] degrees
+        # 考虑到ransac计算出来的单位方向向量方向是不确定的，所以要对角度进行处理
+        x_angle = min(x_angle, 180 - x_angle)
+        y_angle = min(y_angle, 180 - y_angle)
+        z_angle = min(z_angle, 180 - z_angle)
+
+        return x_angle, y_angle, z_angle
 
 
-    def preprocess(self, nb_neighbors = 100, std_ratio = 0.1):
+
+    def preprocess(self, method, nb_neighbors=100, std_ratio=0.1):
         # Statistic outlier removal(删除与点云的距离比起其他邻域的平均距离远的点)
         # nb_neighbors: 用于计算每个点的邻域的点数
         # std_ratio: 用于计算每个点的邻域的标准差
         # 注意: 对于dense和mittelpoints两种方法处理的点云，要用不同的参数(需要调整)
         # DBSCAN clustering for our mittepunkt
-        cl, ind = self.open3d_pcd.remove_statistical_outlier(nb_neighbors=nb_neighbors,   # std_ratio越小过滤强度越大
-                                                        std_ratio=std_ratio)
-        if debug_flag:
-            self.display_inlier_outlier(self.open3d_pcd, ind)  #  remove_radius_outlier可视化   
-        self.open3d_pcd = self.open3d_pcd.select_by_index(ind)  # removal valid    
+        if method == "RANSAC":
+        
+            cl, ind = self.open3d_pcd.remove_statistical_outlier(nb_neighbors=nb_neighbors,   # std_ratio越小过滤强度越大
+                                                            std_ratio=std_ratio)
+            if debug_flag:
+                self.display_inlier_outlier(self.open3d_pcd, ind)  #  remove_radius_outlier可视化   
+            self.open3d_pcd = self.open3d_pcd.select_by_index(ind)  # removal valid    
 
-        print("pointcloud number(after downsample and removal outlier): ", len(self.open3d_pcd.points))  
+            print("pointcloud number(after downsample and removal outlier): ", len(self.open3d_pcd.points))
+            
+        elif method == "Mittelpoint":
+
+            # # Statistic outlier removal(删除与点云的距离比起其他邻域的平均距离远的点)
+            # cl, ind = self.open3d_pcd.remove_statistical_outlier(nb_neighbors=50,   # std_ratio越小过滤强度越大
+            #                                                 std_ratio=0.5)
+            # if debug_flag:
+            #     self.display_inlier_outlier(self.open3d_pcd, ind)  #  remove_radius_outlier可视化   
+            # self.open3d_pcd = self.open3d_pcd.select_by_index(ind)  # removal valid    
+            # self.open3d_pcd.paint_uniform_color([0,0,1]) # blue
+
+            # DESCAN filter
+            pcd_largest_cluster = self.dbscan_filter(self.open3d_pcd)
+            
+
+            # visualization
+            if debug_flag:
+                o3d.visualization.draw_geometries([self.open3d_pcd, pcd_largest_cluster], window_name="DBSCAN cluster(green)", width=800, height=600)
+
+            self.open3d_pcd = pcd_largest_cluster
+                
+    def dbscan_filter(self, pcd):
+
+        # 
+        points = np.asarray(self.open3d_pcd.points)
+
+        # DBSCAN params very important
+        # eps defines the distance to neighbours in a cluster
+        # min_points defines the minimun number of points required to form a cluster.
+
+        with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Debug) as cm:
+            labels = np.array(pcd.cluster_dbscan(eps=50, min_points=80, print_progress=True))
+
+        # Find the largest cluster
+        max_label = labels.max()
+        print(f"point cloud has {max_label + 1} clusters")
+        counts = np.bincount(labels[labels != -1])  # Ignore noise labeled as -1
+        largest_cluster_label = np.argmax(counts)
+
+        # Extract the points belonging to the largest cluster
+        largest_cluster_points = points[labels == largest_cluster_label]        
+
+        # Convert back to Open3D.o3d.geometry.PointCloud
+        pcd_largest_cluster = o3d.geometry.PointCloud()
+        pcd_largest_cluster.points = o3d.utility.Vector3dVector(largest_cluster_points)
+        pcd_largest_cluster.paint_uniform_color([1, 0, 0]) # green
+
+        return pcd_largest_cluster
+
 
         
     def voxel2pcd(self, voxel_data):
@@ -264,7 +397,7 @@ class ExtractModul():
         """
         create a mesh sphere at xyz
         Args:
-            xyz: arr, (3,)
+            xyz: arr, (3,) numpy array list
             colors: arr, (3, )
         Returns:
             sphere: mesh sphere for visualization
@@ -275,6 +408,12 @@ class ExtractModul():
             sphere.paint_uniform_color([0,0,0])  # To be changed to the point color.
         else:
             sphere.paint_uniform_color(colors)
+
+        # type check
+        if not isinstance(xyz, list):
+            xyz = xyz.tolist()
+        
+    
         sphere = sphere.translate(xyz)
 
         return sphere

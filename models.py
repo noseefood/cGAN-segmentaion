@@ -221,8 +221,9 @@ class NetworkInference_Unet():
             ]
         )
         
-        self.post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
-        self.tf = Compose([Resize((657, 671)),])
+        # self.post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+        # self.tf = Compose([Resize((657, 671)),])
+        self.tf = Compose([Activations(sigmoid=True),Resize((657, 671)), AsDiscrete(threshold=0.5)]) 
 
     def inference(self, img, tf = None):
         with torch.no_grad():
@@ -235,9 +236,9 @@ class NetworkInference_Unet():
             # img = img.transpose(-1,-2) # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 注意这里与inference.py不同，这里不需要转置，以为读取图片的方式不一样！
 
             output = self.model(img)
-            result = self.post_trans(output) # torch.Size([1, 1, 512, 512])
+            # result = self.post_trans(output) # torch.Size([1, 1, 512, 512])
 
-            probs = result.squeeze(0) # squeeze压缩维度 torch.Size([1, 512, 512])
+            probs = output.squeeze(0) # squeeze压缩维度 torch.Size([1, 512, 512])
             
             if tf is not None:
                 self.tf = tf

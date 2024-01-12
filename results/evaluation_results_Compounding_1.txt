@@ -1,0 +1,28 @@
+Volume info(size in voxel-index and spacing in mm): (429, 418, 155)(0.12, 0.12, 0.12)
+
+
+
+GAN
+Tip_point(voxel): [317. 156.  63.]
+Degree: (21.6560227345565, 71.01651317725322, 79.96408135971086)
+Unet
+Tip_point(voxel): [401.5  32.5  29.5]
+Degree: (50.05417523993259, 87.2756270265171, 40.077256807930006)
+AttUnet
+Tip_point(voxel): [280.   3.  19.]
+Degree: (2.3341909637385356, 89.74918544466357, 87.67933831417754)
+DeeplabV3Plus
+Tip_point(voxel): [330.5 159.   67. ]
+Degree: (20.27855896088962, 71.12119453282097, 82.86557956966553)
+UnetPlusPlus
+Tip_point(voxel): [350.5 167.   64. ]
+Degree: (21.274830600750533, 70.6508010722528, 81.49400977449916)
+GAN_FirstStage
+Tip_point(voxel): [223.6 120.4  78.8]
+Degree: (23.484708216786196, 71.01035037034637, 76.70008142509337)
+
+
+
+Ground truth:
+Tip_point(voxel):317,154,71
+Angle: 

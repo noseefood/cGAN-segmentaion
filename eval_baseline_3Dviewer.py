@@ -58,10 +58,25 @@ class Evaluation():
 
         # ######################## iterate all models ##########################
 
+        txt_file = open('./results/evaluation_results_' + self.mode + '_' + str(self.dataset) + '.txt', 'w')
+        txt_file.write('Volume info(size in voxel-index and spacing in mm): ' + str(self.itkimage_unSeg.GetSize()) + str(self.itkimage_unSeg.GetSpacing()) + '\n')
+
+
+
+        print(self.itkimage_unSeg)
+
         for model_name, model in models.items():
             print(f'Processing model {model_name} ...')
-            self.segmentation3D(self.itkimage_unSeg, model, model_name, method = "RANSAC")
+            Tip_point, slope = self.segmentation3D(self.itkimage_unSeg, model, model_name, method = "Mittelpoint") # Mittelpoint, RANSAC
 
+            # save Tip_point, slope and volume basic info into txt file
+            txt_file.write(model_name + '\n')
+            txt_file.write('Tip_point(voxel): ' + str(Tip_point) + '\n')
+            txt_file.write('Degree: ' + str(slope) + '\n')
+
+        txt_file.close()
+            
+            
 
     def segmentation3D(self, itkimage_unSeg, model, model_name, method = "RANSAC"):
         '''
@@ -70,40 +85,47 @@ class Evaluation():
         '''
         time_start = time.time()
 
+        change_order_coordinate = False # Only for dataset 5!!!
+
+        if change_order_coordinate:
+            itkimage_unSeg = self.convert_coordinate_order(itkimage_unSeg)
+
         # directly segment the volume
-        seg_3D = VoxelSeg(itkimage_unSeg, model, method="RANSAC") # RANSAC, Mittelpoint and Projection 
+        seg_3D = VoxelSeg(itkimage_unSeg, model, method=method) # RANSAC, Mittelpoint and Projection 
         itkimage_Seg = seg_3D.segment3D() # 保存分割结果mhd同时返回itk_image
         
-        # extrcat the needle pose from the segmented volume
+        # save
+        sitk.WriteImage(itkimage_Seg, './results/segmented_Volume' + model_name + '_' +str(self.dataset) + method + '.mhd')
+
+        # # extrcat the needle pose from the segmented volume
         extract_modul = ExtractModul(itkimage_Seg, "itkimage", thresthold = 1, voxel_size = 2)
 
-        if method == "RANSAC":
-            # nb_neighbors = 100, std_ratio = 0.1 default value
-            extract_modul.preprocess() # Statistic outlier removal
-        elif method == "Mittelpoint":
-            # nb_neighbors = 100, std_ratio = 0.1
-            extract_modul.preprocess(nb_neighbors=100, std_ratio=0.1) # Statistic outlier removal
+        extract_modul.preprocess(method) #outlier removal
 
-        point_1, point_2 = extract_modul.extract()
-
-        # extract the needle physical parameter from the volume 
-        point1_base = itkimage_unSeg.TransformContinuousIndexToPhysicalPoint(point_1)  # 返回的是tuple  TransformPhysicalPointToIndex则可以将空间坐标转换为体素坐标
-        point2_base = itkimage_unSeg.TransformContinuousIndexToPhysicalPoint(point_2)
-        time_end = time.time()
-        # save the results for comparision
+        Tip_point, slope = extract_modul.extract(analysis=True)   # True/False: analysis/experiments mode
 
 
+        # save the results for comparision(Tip_point, slope)
+        return Tip_point, slope
+        
 
-
-        print('time cost for 3D segmentation and extraction', time_end - time_start, 's')
+        # # extract the needle physical parameter from the volume 
+        # point1_base = itkimage_un Seg.TransformContinuousIndexToPhysicalPoint(point_1)  # 返回的是tuple  TransformPhysicalPointToIndex则可以将空间坐标转换为体素坐标
+        # point2_base = itkimage_unSeg.TransformContinuousIndexToPhysicalPoint(point_2)
+        # time_end = time.time()
+        # # save the results for comparision
 
 
 
 
+        # print('time cost for 3D segmentation and extraction', time_end - time_start, 's')
 
 
-        # save
-        sitk.WriteImage(itkimage_Seg, './results/segmented_Volume' + model_name + str(self.dataset) +'.mhd')
+
+
+
+
+
 
 
         
@@ -122,7 +144,17 @@ class Evaluation():
 
         # time_end = time.time()
         # print('time cost for 3D segmentation and extraction', time_end - time_start, 's')
+    def convert_coordinate_order(self, itk_image):
+        '''
+        change the order of the coordinate system from (z,y,x) to (x,y,z)  !!! for dataset 5
+        '''
+        # Create a permutation vector
+        permutation_vector = [2, 1, 0]
 
+        # Permute the axes of the image
+        itk_image_permuted = sitk.PermuteAxes(itk_image, permutation_vector)
+
+        return itk_image_permuted
 
 if __name__ == "__main__":
     test_mode = "Compounding" # "Compounding"
